@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Toaster } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
+import { GITHUB_REPO_URL } from "@/lib/site";
 
 export const Route = createFileRoute("/editor")({
   head: () => ({
@@ -78,10 +79,11 @@ function EditorPage() {
             <Eraser className="mr-1 h-3.5 w-3.5" /> Clear
           </Button>
           <a
-            href="https://github.com"
+            href={GITHUB_REPO_URL}
             target="_blank"
             rel="noreferrer"
             className="inline-flex h-8 items-center rounded-md px-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            title="View on GitHub"
           >
             <Github className="h-4 w-4" />
           </a>

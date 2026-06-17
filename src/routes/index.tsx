@@ -7,8 +7,10 @@ import {
   GitFork,
   Boxes,
   Zap,
+  Github,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GITHUB_REPO_URL } from "@/lib/site";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -43,12 +45,12 @@ function Landing() {
           </div>
           <nav className="flex items-center gap-2">
             <a
-              href="https://github.com"
+              href={GITHUB_REPO_URL}
               target="_blank"
               rel="noreferrer"
               className="inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-sm font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
             >
-              Github Star
+              <Github className="h-4 w-4" /> Star
             </a>
             <Button asChild>
               <Link to="/editor">Open Editor</Link>
@@ -81,8 +83,8 @@ function Landing() {
               </Link>
             </Button>
             <Button size="lg" variant="outline" asChild>
-              <a href="https://github.com" target="_blank" rel="noreferrer">
-                Github icon View source
+              <a href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
+                <Github className="mr-1 h-4 w-4" /> View source
               </a>
             </Button>
           </div>
@@ -152,7 +154,14 @@ function Landing() {
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6 text-sm text-muted-foreground">
           <span>OpenFlowDB — open-source schema designer</span>
-          <span>Built with TanStack Start</span>
+          <a
+            href={GITHUB_REPO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="transition hover:text-foreground"
+          >
+            GitHub
+          </a>
         </div>
       </footer>
     </div>

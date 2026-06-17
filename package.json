@@ -1,6 +1,16 @@
 {
   "name": "openflowdb",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Open-source visual database schema designer",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Praveenpn180/openflowdb.git"
+  },
+  "homepage": "https://openflowdb.vercel.app",
+  "bugs": {
+    "url": "https://github.com/Praveenpn180/openflowdb/issues"
+  },
   "sideEffects": false,
   "type": "module",
   "scripts": {
