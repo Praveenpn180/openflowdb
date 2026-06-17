@@ -27,8 +27,17 @@ CREATE TABLE posts (
   title varchar NOT NULL
 );`;
 
-export function ImportSqlDialog() {
-  const [open, setOpen] = useState(false);
+interface ImportSqlDialogProps {
+  /** If provided the dialog is controlled externally (no trigger button rendered). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
+
+export function ImportSqlDialog({ open: controlledOpen, onOpenChange }: ImportSqlDialogProps = {}) {
+  const isControlled = controlledOpen !== undefined;
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = isControlled ? controlledOpen : internalOpen;
+  const setOpen = isControlled ? (onOpenChange ?? (() => {})) : setInternalOpen;
   const [sql, setSql] = useState("");
 
   function handleImport() {
@@ -50,11 +59,13 @@ export function ImportSqlDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm">
-          <FileCode2 className="mr-1 h-3.5 w-3.5" /> Import SQL
-        </Button>
-      </DialogTrigger>
+      {!isControlled && (
+        <DialogTrigger asChild>
+          <Button variant="ghost" size="sm">
+            <FileCode2 className="mr-1 h-3.5 w-3.5" /> Import SQL
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="dark max-w-2xl bg-background text-foreground">
         <DialogHeader>
           <DialogTitle>Import SQL</DialogTitle>

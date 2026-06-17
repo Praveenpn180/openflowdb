@@ -5,16 +5,25 @@ import { autoLayoutDiagram } from "./layout";
 
 const STORAGE_KEY = "openflowdb:diagram:v1";
 
+const HISTORY_LIMIT = 100;
+
 interface State {
   diagram: Diagram;
   selectedTableId: string | null;
+  /** IDs of all currently selected tables (superset — always includes selectedTableId when set) */
+  selectedTableIds: Set<string>;
   layoutRevision: number;
+  past: Diagram[];
+  future: Diagram[];
 }
 
 let state: State = {
   diagram: sampleDiagram(),
   selectedTableId: null,
+  selectedTableIds: new Set(),
   layoutRevision: 0,
+  past: [],
+  future: [],
 };
 
 const listeners = new Set<() => void>();
@@ -49,13 +58,27 @@ export function hydrate() {
   }
 }
 
+/**
+ * Mutate state without touching history (for selection, viewport, etc.)
+ */
 function setState(updater: (s: State) => State) {
   state = updater(state);
   emit();
 }
 
-function updateDiagram(updater: (d: Diagram) => Diagram) {
-  setState((s) => ({ ...s, diagram: updater(s.diagram) }));
+/**
+ * Mutate the diagram AND push the old diagram snapshot onto `past`.
+ * Always clears `future`.
+ */
+function updateDiagram(updater: (d: Diagram) => Diagram, snapshot = true) {
+  setState((s) => {
+    const next = updater(s.diagram);
+    if (next === s.diagram) return s; // no-op
+    const past = snapshot
+      ? [...s.past.slice(-(HISTORY_LIMIT - 1)), s.diagram]
+      : s.past;
+    return { ...s, diagram: next, past, future: snapshot ? [] : s.future };
+  });
 }
 
 // ---- subscription hooks ----
@@ -80,6 +103,14 @@ export function useSelectedTableId(): string | null {
   );
 }
 
+export function useSelectedTableIds(): Set<string> {
+  return useSyncExternalStore(
+    subscribe,
+    () => state.selectedTableIds,
+    () => state.selectedTableIds,
+  );
+}
+
 export function useLayoutRevision(): number {
   return useSyncExternalStore(
     subscribe,
@@ -88,12 +119,86 @@ export function useLayoutRevision(): number {
   );
 }
 
+export function useCanUndo(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => state.past.length > 0,
+    () => state.past.length > 0,
+  );
+}
+
+export function useCanRedo(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => state.future.length > 0,
+    () => state.future.length > 0,
+  );
+}
+
 // ---- actions ----
 export const actions = {
-  selectTable(id: string | null) {
-    setState((s) => ({ ...s, selectedTableId: id }));
+  // ---- history ----
+  undo() {
+    setState((s) => {
+      if (s.past.length === 0) return s;
+      const past = [...s.past];
+      const prev = past.pop()!;
+      return {
+        ...s,
+        diagram: prev,
+        past,
+        future: [s.diagram, ...s.future.slice(0, HISTORY_LIMIT - 1)],
+      };
+    });
   },
 
+  redo() {
+    setState((s) => {
+      if (s.future.length === 0) return s;
+      const [next, ...future] = s.future;
+      return {
+        ...s,
+        diagram: next,
+        past: [...s.past.slice(-(HISTORY_LIMIT - 1)), s.diagram],
+        future,
+      };
+    });
+  },
+
+  // ---- selection ----
+  selectTable(id: string | null) {
+    setState((s) => ({
+      ...s,
+      selectedTableId: id,
+      selectedTableIds: id ? new Set([id]) : new Set(),
+    }));
+  },
+
+  /** Toggle a table in/out of the multi-select set without clearing others. */
+  toggleTableSelection(id: string) {
+    setState((s) => {
+      const next = new Set(s.selectedTableIds);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      // Keep selectedTableId pointing to the last-clicked one (or null if empty)
+      const primaryId = next.has(id) ? id : (next.values().next().value ?? null);
+      return { ...s, selectedTableIds: next, selectedTableId: primaryId ?? null };
+    });
+  },
+
+  /** Replace the whole multi-select set (e.g. from a drag-marquee). */
+  setSelectedTableIds(ids: string[]) {
+    setState((s) => {
+      const next = new Set(ids);
+      const primary = ids[ids.length - 1] ?? null;
+      return { ...s, selectedTableIds: next, selectedTableId: primary };
+    });
+  },
+
+  // ---- diagram metadata ----
   renameDiagram(name: string) {
     updateDiagram((d) => ({ ...d, name }));
   },
@@ -102,14 +207,19 @@ export const actions = {
     updateDiagram((d) => ({ ...d, dialect }));
   },
 
+  // ---- tables ----
   addTable(at?: { x: number; y: number }) {
     let createdId = "";
     setState((s) => {
       const t = newTable({ ...(at ?? {}) }, s.diagram.tables.length);
       createdId = t.id;
+      const past = [...s.past.slice(-(HISTORY_LIMIT - 1)), s.diagram];
       return {
         ...s,
         selectedTableId: t.id,
+        selectedTableIds: new Set([t.id]),
+        past,
+        future: [],
         diagram: { ...s.diagram, tables: [...s.diagram.tables, t] },
       };
     });
@@ -117,17 +227,25 @@ export const actions = {
   },
 
   removeTable(id: string) {
-    setState((s) => ({
-      ...s,
-      selectedTableId: s.selectedTableId === id ? null : s.selectedTableId,
-      diagram: {
-        ...s.diagram,
-        tables: s.diagram.tables.filter((t) => t.id !== id),
-        relationships: s.diagram.relationships.filter(
-          (r) => r.sourceTableId !== id && r.targetTableId !== id,
-        ),
-      },
-    }));
+    setState((s) => {
+      const next = new Set(s.selectedTableIds);
+      next.delete(id);
+      const past = [...s.past.slice(-(HISTORY_LIMIT - 1)), s.diagram];
+      return {
+        ...s,
+        selectedTableId: s.selectedTableId === id ? null : s.selectedTableId,
+        selectedTableIds: next,
+        past,
+        future: [],
+        diagram: {
+          ...s.diagram,
+          tables: s.diagram.tables.filter((t) => t.id !== id),
+          relationships: s.diagram.relationships.filter(
+            (r) => r.sourceTableId !== id && r.targetTableId !== id,
+          ),
+        },
+      };
+    });
   },
 
   updateTable(id: string, patch: Partial<Table>) {
@@ -138,12 +256,66 @@ export const actions = {
   },
 
   moveTable(id: string, x: number, y: number) {
+    // no snapshot for continuous drag — snapshot on pointerup via commitMove
+    updateDiagram(
+      (d) => ({
+        ...d,
+        tables: d.tables.map((t) => (t.id === id ? { ...t, x, y } : t)),
+      }),
+      false, // don't push to history on every pixel
+    );
+  },
+
+  /** Call after a drag ends to push a single snapshot. */
+  commitMove() {
+    setState((s) => {
+      if (s.past[s.past.length - 1] === s.diagram) return s;
+      const past = [...s.past.slice(-(HISTORY_LIMIT - 1)), s.diagram];
+      return { ...s, past, future: [] };
+    });
+  },
+
+  // ---- bulk actions ----
+  bulkMoveTable(ids: string[], dx: number, dy: number) {
+    updateDiagram(
+      (d) => ({
+        ...d,
+        tables: d.tables.map((t) =>
+          ids.includes(t.id) ? { ...t, x: Math.round(t.x + dx), y: Math.round(t.y + dy) } : t,
+        ),
+      }),
+      false,
+    );
+  },
+
+  bulkDeleteTables(ids: string[]) {
+    setState((s) => {
+      const past = [...s.past.slice(-(HISTORY_LIMIT - 1)), s.diagram];
+      return {
+        ...s,
+        selectedTableId: null,
+        selectedTableIds: new Set(),
+        past,
+        future: [],
+        diagram: {
+          ...s.diagram,
+          tables: s.diagram.tables.filter((t) => !ids.includes(t.id)),
+          relationships: s.diagram.relationships.filter(
+            (r) => !ids.includes(r.sourceTableId) && !ids.includes(r.targetTableId),
+          ),
+        },
+      };
+    });
+  },
+
+  bulkRecolorTables(ids: string[], color: string) {
     updateDiagram((d) => ({
       ...d,
-      tables: d.tables.map((t) => (t.id === id ? { ...t, x, y } : t)),
+      tables: d.tables.map((t) => (ids.includes(t.id) ? { ...t, color } : t)),
     }));
   },
 
+  // ---- columns ----
   addColumn(tableId: string) {
     updateDiagram((d) => ({
       ...d,
@@ -183,9 +355,9 @@ export const actions = {
     }));
   },
 
+  // ---- relationships ----
   addRelationship(rel: Omit<Relationship, "id">) {
     updateDiagram((d) => {
-      // prevent self & duplicates
       if (rel.sourceTableId === rel.targetTableId) return d;
       const exists = d.relationships.some(
         (r) =>
@@ -200,6 +372,13 @@ export const actions = {
     });
   },
 
+  updateRelationship(id: string, patch: Partial<Omit<Relationship, "id">>) {
+    updateDiagram((d) => ({
+      ...d,
+      relationships: d.relationships.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+    }));
+  },
+
   removeRelationship(id: string) {
     updateDiagram((d) => ({
       ...d,
@@ -207,23 +386,51 @@ export const actions = {
     }));
   },
 
+  // ---- global ----
   loadSample() {
-    setState((s) => ({ ...s, diagram: sampleDiagram(), selectedTableId: null }));
+    setState((s) => ({
+      ...s,
+      diagram: sampleDiagram(),
+      selectedTableId: null,
+      selectedTableIds: new Set(),
+      past: [],
+      future: [],
+    }));
   },
 
   clearAll() {
-    setState((s) => ({ ...s, diagram: emptyDiagram(), selectedTableId: null }));
+    setState((s) => ({
+      ...s,
+      diagram: emptyDiagram(),
+      selectedTableId: null,
+      selectedTableIds: new Set(),
+      past: [],
+      future: [],
+    }));
   },
 
   importDiagram(d: Diagram) {
-    setState((s) => ({ ...s, diagram: d, selectedTableId: null }));
+    setState((s) => ({
+      ...s,
+      diagram: d,
+      selectedTableId: null,
+      selectedTableIds: new Set(),
+      past: [],
+      future: [],
+    }));
   },
 
   autoLayout() {
-    setState((s) => ({
-      ...s,
-      layoutRevision: s.layoutRevision + 1,
-      diagram: autoLayoutDiagram(s.diagram),
-    }));
+    setState((s) => {
+      const laid = autoLayoutDiagram(s.diagram);
+      const past = [...s.past.slice(-(HISTORY_LIMIT - 1)), s.diagram];
+      return {
+        ...s,
+        layoutRevision: s.layoutRevision + 1,
+        diagram: laid,
+        past,
+        future: [],
+      };
+    });
   },
 };
