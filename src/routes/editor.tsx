@@ -7,13 +7,13 @@ import {
   Trash2,
   Sparkles,
   Eraser,
-  Github,
   Network,
   PanelRight,
   Code2,
 } from "lucide-react";
 import { Canvas, type CanvasHandle } from "@/components/erd/Canvas";
 import { DiagramFileMenu } from "@/components/erd/DiagramFileMenu";
+import { GitHubIcon } from "@/components/icons/github-icon";
 import { Inspector } from "@/components/erd/Inspector";
 import { SqlPanel } from "@/components/erd/SqlPanel";
 import { ImportSqlDialog } from "@/components/erd/ImportSqlDialog";
@@ -85,7 +85,7 @@ function EditorPage() {
             className="inline-flex h-8 items-center rounded-md px-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
             title="View on GitHub"
           >
-            <Github className="h-4 w-4" />
+            <GitHubIcon className="h-4 w-4" />
           </a>
           <Button size="sm" onClick={() => setTab("sql")}>
             <Code2 className="mr-1 h-3.5 w-3.5" /> Generate SQL
