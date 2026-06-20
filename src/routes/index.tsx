@@ -11,6 +11,8 @@ import {
 import { GitHubIcon } from "@/components/icons/github-icon";
 import { Button } from "@/components/ui/button";
 import { GITHUB_REPO_URL } from "@/lib/site";
+import { useAuth } from "@/lib/auth/useAuth";
+
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -33,17 +35,19 @@ export const Route = createFileRoute("/")({
 });
 
 function Landing() {
+  const { user, loading } = useAuth();
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-10 border-b border-border/60 bg-background/80 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-          <div className="flex items-center gap-2">
+          <Link to="/" className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
               <Database className="h-4 w-4 text-primary-foreground" />
             </div>
             <span className="text-lg font-bold tracking-tight">OpenFlowDB</span>
-          </div>
-          <nav className="flex items-center gap-2">
+          </Link>
+          <nav className="flex items-center gap-4">
             <a
               href={GITHUB_REPO_URL}
               target="_blank"
@@ -52,12 +56,27 @@ function Landing() {
             >
               <GitHubIcon className="h-4 w-4" /> Star
             </a>
-            <Button asChild>
-              <Link to="/editor">Open Editor</Link>
-            </Button>
+            {!loading && user ? (
+              <Button asChild>
+                <Link to="/dashboard">Go to Dashboard</Link>
+              </Button>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="text-sm font-medium text-muted-foreground transition hover:text-foreground"
+                >
+                  Sign In
+                </Link>
+                <Button asChild size="sm">
+                  <Link to="/login">Sign Up</Link>
+                </Button>
+              </>
+            )}
           </nav>
         </div>
       </header>
+
 
       {/* hero */}
       <section className="relative overflow-hidden">
@@ -77,17 +96,26 @@ function Landing() {
             Export production-ready SQL for PostgreSQL, MySQL, and SQLite instantly.
           </p>
           <div className="mt-8 flex items-center justify-center gap-3">
-            <Button size="lg" asChild>
+            {!loading && user ? (
+              <Button size="lg" asChild>
+                <Link to="/dashboard">
+                  Go to Dashboard <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
+              </Button>
+            ) : (
+              <Button size="lg" asChild>
+                <Link to="/login">
+                  Get Started Free <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
+              </Button>
+            )}
+            <Button size="lg" variant="outline" asChild>
               <Link to="/editor">
-                Start designing <ArrowRight className="ml-1 h-4 w-4" />
+                Try Editor (Guest)
               </Link>
             </Button>
-            <Button size="lg" variant="outline" asChild>
-              <a href={GITHUB_REPO_URL} target="_blank" rel="noreferrer">
-                <GitHubIcon className="mr-1 h-4 w-4" /> View source
-              </a>
-            </Button>
           </div>
+
 
           {/* mock preview */}
           <div className="mx-auto mt-16 max-w-4xl overflow-hidden rounded-xl border border-border bg-card shadow-2xl">
@@ -141,15 +169,35 @@ function Landing() {
         <div className="mx-auto flex max-w-6xl flex-col items-center px-6 py-16 text-center">
           <h2 className="text-3xl font-bold tracking-tight">Ready to map your data?</h2>
           <p className="mt-3 max-w-md text-muted-foreground">
-            No sign-up required. Open the editor and start with a sample schema.
+            {!loading && user
+              ? "Access your saved database schemas or build a new one."
+              : "Create a free account to save, share, and collaborate on your database diagrams."}
           </p>
-          <Button size="lg" className="mt-6" asChild>
-            <Link to="/editor">
-              Open OpenFlowDB <ArrowRight className="ml-1 h-4 w-4" />
-            </Link>
-          </Button>
+          <div className="mt-6 flex items-center gap-3">
+            {!loading && user ? (
+              <Button size="lg" asChild>
+                <Link to="/dashboard">
+                  Go to Dashboard <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
+              </Button>
+            ) : (
+              <>
+                <Button size="lg" asChild>
+                  <Link to="/login">
+                    Create Free Account <ArrowRight className="ml-1 h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button size="lg" variant="outline" asChild>
+                  <Link to="/editor">
+                    Open Editor as Guest
+                  </Link>
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </section>
+
 
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6 text-sm text-muted-foreground">

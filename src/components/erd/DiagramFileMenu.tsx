@@ -1,5 +1,17 @@
 import { useRef, type RefObject } from "react";
-import { ChevronDown, Code2, Download, FolderOpen, Image, Save } from "lucide-react";
+import {
+  ChevronDown,
+  Code2,
+  Download,
+  FolderOpen,
+  Image,
+  Save,
+  Sparkles,
+  Eraser,
+  Network,
+  Upload,
+  Settings,
+} from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -7,7 +19,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import type { CanvasHandle } from "@/components/erd/Canvas";
 import {
@@ -19,7 +33,15 @@ import {
 import { generateSql } from "@/lib/erd/sql";
 import { actions, useDiagram } from "@/lib/erd/store";
 
-export function DiagramFileMenu({ canvasRef }: { canvasRef: RefObject<CanvasHandle | null> }) {
+export function DiagramFileMenu({
+  canvasRef,
+  onImportSql,
+  readOnly,
+}: {
+  canvasRef: RefObject<CanvasHandle | null>;
+  onImportSql: () => void;
+  readOnly?: boolean;
+}) {
   const diagram = useDiagram();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -84,31 +106,66 @@ export function DiagramFileMenu({ canvasRef }: { canvasRef: RefObject<CanvasHand
         className="hidden"
         onChange={onFileSelected}
       />
-      <Button variant="ghost" size="sm" onClick={saveDiagram}>
-        <Save className="mr-1 h-3.5 w-3.5" /> Save
-      </Button>
-      <Button variant="ghost" size="sm" onClick={openDiagram}>
-        <FolderOpen className="mr-1 h-3.5 w-3.5" /> Open
-      </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm">
-            <Download className="mr-1 h-3.5 w-3.5" /> Export
-            <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-60" />
+          <Button variant="ghost" size="sm" className="gap-1 cursor-pointer">
+            <Settings className="h-3.5 w-3.5" />
+            <span>Canvas Actions</span>
+            <ChevronDown className="h-3 w-3 opacity-60" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="dark bg-popover text-popover-foreground">
-          <DropdownMenuItem onClick={exportPng}>
-            <Image className="mr-2 h-4 w-4" />
-            PNG image
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={exportSql}>
-            <Code2 className="mr-2 h-4 w-4" />
-            SQL file
+        <DropdownMenuContent align="start" className="w-56 dark bg-popover text-popover-foreground">
+          <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold">Local File Actions</DropdownMenuLabel>
+          <DropdownMenuItem onClick={openDiagram} disabled={readOnly}>
+            <FolderOpen className="mr-2 h-4 w-4" />
+            <span>Open Diagram file</span>
           </DropdownMenuItem>
           <DropdownMenuItem onClick={saveDiagram}>
             <Save className="mr-2 h-4 w-4" />
-            Diagram JSON
+            <span>Save to JSON file</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+          
+          <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold">SQL Actions</DropdownMenuLabel>
+          <DropdownMenuItem onClick={onImportSql} disabled={readOnly}>
+            <Upload className="mr-2 h-4 w-4" />
+            <span>Import DDL SQL...</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={exportSql}>
+            <Code2 className="mr-2 h-4 w-4" />
+            <span>Export DDL SQL file</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuLabel className="text-xs text-muted-foreground font-semibold">Canvas Operations</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => actions.autoLayout()} disabled={readOnly}>
+            <Network className="mr-2 h-4 w-4" />
+            <span>Auto Layout tables</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={exportPng}>
+            <Image className="mr-2 h-4 w-4" />
+            <span>Export PNG Image</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => actions.loadSample()} disabled={readOnly}>
+            <Sparkles className="mr-2 h-4 w-4" />
+            <span>Load Sample schema</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+
+          <DropdownMenuItem
+            onClick={() => {
+              if (confirm("Are you sure you want to clear the canvas?")) {
+                actions.clearAll();
+              }
+            }}
+            disabled={readOnly}
+            className="text-destructive focus:bg-destructive/15 focus:text-destructive"
+          >
+            <Eraser className="mr-2 h-4 w-4" />
+            <span>Clear Canvas</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
