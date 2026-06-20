@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Plus, Trash2, KeyRound, Link2, AlertCircle, AlertTriangle } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Plus, Trash2, KeyRound, Link2, AlertCircle, AlertTriangle, ArrowUp, ArrowDown } from "lucide-react";
 import { actions, useDiagram, useSelectedTableId, useSelectedTableIds } from "@/lib/erd/store";
 import { COLUMN_TYPES, TABLE_COLORS, type RelationKind } from "@/lib/erd/types";
 import { validateTable } from "@/lib/erd/validation";
@@ -20,6 +20,7 @@ export function Inspector() {
   const selectedId = useSelectedTableId();
   const selectedIds = useSelectedTableIds();
   const table = diagram.tables.find((t) => t.id === selectedId);
+  const [newlyAddedColId, setNewlyAddedColId] = useState<string | null>(null);
 
   // Relationships involving this table (as source or target)
   const tableRelationships = useMemo(() => {
@@ -112,13 +113,22 @@ export function Inspector() {
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Columns
           </h3>
-          <Button size="sm" variant="outline" onClick={() => actions.addColumn(table.id)}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              const newId = actions.addColumn(table.id);
+              setNewlyAddedColId(newId);
+            }}
+          >
             <Plus className="mr-1 h-3.5 w-3.5" /> Add
           </Button>
         </div>
 
         <div className="space-y-3 px-4 pb-4">
-          {table.columns.map((col) => {
+          {table.columns.map((col, index) => {
+            const isFirst = index === 0;
+            const isLast = index === table.columns.length - 1;
             const colIssues = issues.filter((i) => i.columnId === col.id);
             return (
               <div
@@ -133,6 +143,13 @@ export function Inspector() {
               >
                 <div className="flex items-center gap-2">
                   <Input
+                    ref={(el) => {
+                      if (el && newlyAddedColId === col.id) {
+                        el.focus();
+                        el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                        setNewlyAddedColId(null);
+                      }
+                    }}
                     value={col.name}
                     onChange={(e) =>
                       actions.updateColumn(table.id, col.id, { name: e.target.value })
@@ -140,6 +157,22 @@ export function Inspector() {
                     className="h-8 text-sm"
                     placeholder="column_name"
                   />
+                  <button
+                    onClick={() => actions.moveColumn(table.id, col.id, "up")}
+                    disabled={isFirst}
+                    className="rounded p-1.5 text-muted-foreground transition hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent"
+                    aria-label="Move column up"
+                  >
+                    <ArrowUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() => actions.moveColumn(table.id, col.id, "down")}
+                    disabled={isLast}
+                    className="rounded p-1.5 text-muted-foreground transition hover:bg-muted disabled:opacity-30 disabled:hover:bg-transparent"
+                    aria-label="Move column down"
+                  >
+                    <ArrowDown className="h-3.5 w-3.5" />
+                  </button>
                   <button
                     onClick={() => actions.removeColumn(table.id, col.id)}
                     className="rounded p-1.5 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"

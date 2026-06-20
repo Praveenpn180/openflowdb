@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import type { Column, Diagram, Relationship, Table } from "./types";
 import { emptyDiagram, newColumn, newTable, sampleDiagram, uid } from "./factory";
 import { autoLayoutDiagram } from "./layout";
+import { parseSql, mergeDiagrams } from "./parse";
 
 const STORAGE_KEY = "openflowdb:diagram:v1";
 
@@ -317,11 +318,33 @@ export const actions = {
 
   // ---- columns ----
   addColumn(tableId: string) {
+    const col = newColumn();
     updateDiagram((d) => ({
       ...d,
       tables: d.tables.map((t) =>
-        t.id === tableId ? { ...t, columns: [...t.columns, newColumn()] } : t,
+        t.id === tableId ? { ...t, columns: [...t.columns, col] } : t,
       ),
+    }));
+    return col.id;
+  },
+
+  moveColumn(tableId: string, columnId: string, direction: "up" | "down") {
+    updateDiagram((d) => ({
+      ...d,
+      tables: d.tables.map((t) => {
+        if (t.id !== tableId) return t;
+        const idx = t.columns.findIndex((c) => c.id === columnId);
+        if (idx === -1) return t;
+        const newIdx = direction === "up" ? idx - 1 : idx + 1;
+        if (newIdx < 0 || newIdx >= t.columns.length) return t;
+
+        const newColumns = [...t.columns];
+        const temp = newColumns[idx];
+        newColumns[idx] = newColumns[newIdx];
+        newColumns[newIdx] = temp;
+
+        return { ...t, columns: newColumns };
+      }),
     }));
   },
 
@@ -432,5 +455,23 @@ export const actions = {
         future: [],
       };
     });
+  },
+
+  updateDiagramFromSql(sql: string) {
+    let success = false;
+    let errors: string[] = [];
+
+    updateDiagram((d) => {
+      const parsed = parseSql(sql);
+      if (!parsed.diagram) {
+        errors = parsed.errors;
+        return d;
+      }
+      success = true;
+      errors = parsed.errors;
+      return mergeDiagrams(d, parsed.diagram);
+    });
+
+    return { success, errors };
   },
 };

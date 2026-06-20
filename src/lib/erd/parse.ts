@@ -246,3 +246,76 @@ export function parseSql(sql: string): ParseResult {
 
   return { diagram, errors };
 }
+
+export function mergeDiagrams(existing: Diagram, parsed: Diagram): Diagram {
+  const mergedTables = parsed.tables.map((parsedTable) => {
+    // Find matching existing table by name (case-insensitive)
+    const existingTable = existing.tables.find(
+      (t) => t.name.toLowerCase() === parsedTable.name.toLowerCase()
+    );
+
+    if (existingTable) {
+      // Re-use table ID, coordinates, and color
+      const tableId = existingTable.id;
+      
+      // Merge columns to preserve their IDs if names match
+      const mergedColumns = parsedTable.columns.map((parsedCol) => {
+        const existingCol = existingTable.columns.find(
+          (c) => c.name.toLowerCase() === parsedCol.name.toLowerCase()
+        );
+        return existingCol
+          ? { ...parsedCol, id: existingCol.id }
+          : parsedCol;
+      });
+
+      return {
+        ...parsedTable,
+        id: tableId,
+        x: existingTable.x,
+        y: existingTable.y,
+        color: existingTable.color,
+        columns: mergedColumns,
+      };
+    }
+
+    return parsedTable;
+  });
+
+  // Re-map relationships to use the merged table and column IDs
+  const tableIdMap = new Map<string, string>(); // parsedTable.id -> mergedTable.id
+  const columnIdMap = new Map<string, string>(); // parsedCol.id -> mergedCol.id
+
+  parsed.tables.forEach((parsedTable, idx) => {
+    const mergedTable = mergedTables[idx];
+    tableIdMap.set(parsedTable.id, mergedTable.id);
+    parsedTable.columns.forEach((parsedCol, cIdx) => {
+      const mergedCol = mergedTable.columns[cIdx];
+      columnIdMap.set(parsedCol.id, mergedCol.id);
+    });
+  });
+
+  const mergedRelationships = parsed.relationships.map((rel) => {
+    const sourceTableId = tableIdMap.get(rel.sourceTableId) || rel.sourceTableId;
+    const sourceColumnId = columnIdMap.get(rel.sourceColumnId) || rel.sourceColumnId;
+    const targetTableId = tableIdMap.get(rel.targetTableId) || rel.targetTableId;
+    const targetColumnId = columnIdMap.get(rel.targetColumnId) || rel.targetColumnId;
+
+    return {
+      ...rel,
+      sourceTableId,
+      sourceColumnId,
+      targetTableId,
+      targetColumnId,
+    };
+  });
+
+  return {
+    ...parsed,
+    id: existing.id,
+    name: existing.name,
+    dialect: existing.dialect, // preserve existing dialect
+    tables: mergedTables,
+    relationships: mergedRelationships,
+  };
+}
+
