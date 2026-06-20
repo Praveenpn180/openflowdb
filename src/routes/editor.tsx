@@ -274,33 +274,22 @@ function EditorPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
           {/* Undo / Redo */}
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => actions.undo()} disabled={!canUndo || readOnly} title="Undo (Ctrl+Z)">
+          <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" onClick={() => actions.undo()} disabled={!canUndo || readOnly} title="Undo (Ctrl+Z)">
             <Undo2 className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => actions.redo()} disabled={!canRedo || readOnly} title="Redo (Ctrl+Shift+Z)">
+          <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" onClick={() => actions.redo()} disabled={!canRedo || readOnly} title="Redo (Ctrl+Shift+Z)">
             <Redo2 className="h-4 w-4" />
           </Button>
 
           <div className="mx-1 h-5 w-px bg-border" />
 
-          <DiagramFileMenu canvasRef={canvasRef} />
-
-          <div className="mx-1 h-5 w-px bg-border" />
-
-          <Button variant="ghost" size="sm" onClick={() => !readOnly && actions.autoLayout()} disabled={readOnly} title="Ctrl+L">
-            <Network className="mr-1 h-3.5 w-3.5" /> Auto layout
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => !readOnly && actions.loadSample()} disabled={readOnly}>
-            <Sparkles className="mr-1 h-3.5 w-3.5" /> Sample
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setImportOpen(true)} disabled={readOnly}>
-            Import SQL
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => !readOnly && actions.clearAll()} disabled={readOnly}>
-            <Eraser className="mr-1 h-3.5 w-3.5" /> Clear
-          </Button>
+          <DiagramFileMenu
+            canvasRef={canvasRef}
+            onImportSql={() => setImportOpen(true)}
+            readOnly={readOnly}
+          />
 
           {/* Share button (only if cloud diagram) */}
           {diagramId && user && !readOnly && isSupabaseConfigured() && (
@@ -310,12 +299,12 @@ function EditorPage() {
           {/* Save / Login */}
           {!readOnly && isSupabaseConfigured() && (
             user ? (
-              <Button size="sm" variant="outline" onClick={handleManualSave} disabled={saving} className="gap-1.5">
+              <Button size="sm" variant="outline" onClick={handleManualSave} disabled={saving} className="gap-1.5 cursor-pointer">
                 {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
                 Save
               </Button>
             ) : (
-              <Button size="sm" variant="outline" asChild className="gap-1.5">
+              <Button size="sm" variant="outline" asChild className="gap-1.5 cursor-pointer">
                 <Link to="/login">
                   <LogIn className="h-3.5 w-3.5" /> Sign in to save
                 </Link>
@@ -330,9 +319,11 @@ function EditorPage() {
             </span>
           )}
 
+          <div className="mx-1 h-5 w-px bg-border" />
+
           {/* Dashboard link */}
           {user && (
-            <Button variant="ghost" size="icon" className="h-8 w-8" asChild title="My Diagrams">
+            <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" asChild title="My Diagrams">
               <Link to="/dashboard">
                 <LayoutDashboard className="h-4 w-4" />
               </Link>
@@ -351,7 +342,7 @@ function EditorPage() {
 
           <div className="mx-1 h-5 w-px bg-border" />
 
-          <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground" onClick={() => setPaletteOpen(true)} title="Command palette (Ctrl+K)">
+          <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground cursor-pointer" onClick={() => setPaletteOpen(true)} title="Command palette (Ctrl+K)">
             <Terminal className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Commands</span>
             <kbd className="hidden rounded border bg-muted px-1 text-[10px] font-mono sm:inline">⌘K</kbd>

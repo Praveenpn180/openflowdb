@@ -4,8 +4,10 @@ import { Database, Github, Mail, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { signInWithEmail, signUpWithEmail, signInWithGitHub } from "@/lib/auth/useAuth";
+import { signInWithEmail, signUpWithEmail, signInWithGitHub, signInWithGoogle } from "@/lib/auth/useAuth";
 import { cn } from "@/lib/utils";
+import { GoogleIcon } from "@/components/icons/google-icon";
+
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -60,6 +62,19 @@ function LoginPage() {
     }
   }
 
+  async function handleGoogle() {
+    setError(null);
+    setLoading(true);
+    try {
+      const { error } = await signInWithGoogle();
+      if (error) throw error;
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed");
+      setLoading(false);
+    }
+  }
+
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       {/* Background glow */}
@@ -101,16 +116,28 @@ function LoginPage() {
             </div>
           ) : (
             <>
-              {/* GitHub OAuth */}
-              <Button
-                variant="outline"
-                className="w-full gap-2"
-                onClick={handleGitHub}
-                disabled={loading}
-              >
-                <Github className="h-4 w-4" />
-                Continue with GitHub
-              </Button>
+              {/* OAuth Providers */}
+              <div className="flex flex-col gap-2">
+                <Button
+                  variant="outline"
+                  className="w-full gap-2 cursor-pointer"
+                  onClick={handleGoogle}
+                  disabled={loading}
+                >
+                  <GoogleIcon className="h-4 w-4" />
+                  Continue with Google
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full gap-2 cursor-pointer"
+                  onClick={handleGitHub}
+                  disabled={loading}
+                >
+                  <Github className="h-4 w-4" />
+                  Continue with GitHub
+                </Button>
+              </div>
+
 
               <div className="relative my-5">
                 <div className="absolute inset-0 flex items-center">
