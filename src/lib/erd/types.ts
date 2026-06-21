@@ -13,6 +13,7 @@ export const COLUMN_TYPES = [
   "numeric",
   "json",
   "jsonb",
+  "enum",
 ] as const;
 
 export type ColumnType = (typeof COLUMN_TYPES)[number];
@@ -26,6 +27,7 @@ export interface Column {
   isUnique: boolean;
   defaultValue?: string;
   comment?: string;
+  values?: string[];
 }
 
 export const TABLE_COLORS = [
@@ -39,6 +41,13 @@ export const TABLE_COLORS = [
   "#14b8a6",
 ] as const;
 
+export interface Index {
+  id: string;
+  name: string;
+  columnIds: string[];
+  isUnique: boolean;
+}
+
 export interface Table {
   id: string;
   name: string;
@@ -49,6 +58,7 @@ export interface Table {
   isLocked?: boolean;
   isCollapsed?: boolean;
   description?: string;
+  indexes?: Index[];
 }
 
 export type RelationKind = "1-1" | "1-n" | "n-n";

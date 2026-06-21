@@ -27,7 +27,11 @@ function unquote(id: string): string {
 
 function normalizeType(raw: string): string {
   const t = raw.toLowerCase().trim();
+  // Extract content inside parenthesis if any
+  const parenMatch = t.match(/\(([^)]+)\)/);
+  const params = parenMatch ? parenMatch[1] : null;
   const base = t.replace(/\(.*\)/, "").trim();
+
   const map: Record<string, string> = {
     int: "integer",
     int4: "integer",
@@ -51,7 +55,8 @@ function normalizeType(raw: string): string {
     "timestamp without time zone": "timestamp",
     "timestamp with time zone": "timestamp",
   };
-  return map[base] ?? base;
+  const normBase = map[base] ?? base;
+  return params ? `${normBase}(${params})` : normBase;
 }
 
 // split top-level by commas, respecting parentheses
@@ -78,6 +83,41 @@ const CONSTRAINT_KEYWORDS = /^(primary|unique|foreign|constraint|key|check|index
 export function parseSql(sql: string): ParseResult {
   const errors: string[] = [];
   const cleaned = stripComments(sql);
+
+  // Match custom enum types in Postgres
+  // CREATE TYPE enum_name AS ENUM ('active', 'inactive');
+  const pgEnumRegex = /create\s+type\s+([`"\[\]\w.]+)\s+as\s+enum\s*\(([^)]+)\)/gi;
+  const pgEnums = new Map<string, string[]>();
+  let pgEnumMatch: RegExpExecArray | null;
+  while ((pgEnumMatch = pgEnumRegex.exec(cleaned)) !== null) {
+    const enumName = unquote(pgEnumMatch[1]).split(".").pop() ?? pgEnumMatch[1];
+    const enumVals = pgEnumMatch[2].split(",").map((v) => v.trim().replace(/^['"]|['"]$/g, ""));
+    pgEnums.set(enumName.toLowerCase(), enumVals);
+  }
+
+  interface PendingIndex {
+    tableName: string;
+    name: string;
+    columns: string[];
+    isUnique: boolean;
+  }
+  const pendingIndexes: PendingIndex[] = [];
+
+  // Match standalone CREATE INDEX statements
+  const indexRegex = /create\s+(unique\s+)?index\s+(?:if\s+not\s+exists\s+)?([`"\[\]\w.]+)\s+on\s+([`"\[\]\w.]+)\s*\(([^)]+)\)/gi;
+  let idxMatch: RegExpExecArray | null;
+  while ((idxMatch = indexRegex.exec(cleaned)) !== null) {
+    const isUnique = !!idxMatch[1];
+    const idxName = unquote(idxMatch[2]).split(".").pop() ?? idxMatch[2];
+    const tableName = unquote(idxMatch[3]).split(".").pop() ?? idxMatch[3];
+    const cols = idxMatch[4].split(",").map((c) => unquote(c).trim().toLowerCase());
+    pendingIndexes.push({
+      tableName: tableName.toLowerCase(),
+      name: idxName,
+      columns: cols,
+      isUnique,
+    });
+  }
 
   const tableHeadRegex =
     /create\s+table\s+(?:if\s+not\s+exists\s+)?([`"\[\]\w.]+)\s*\(/gi;
@@ -141,6 +181,18 @@ export function parseSql(sql: string): ParseResult {
             targetColumn: unquote(fk[3].split(",")[0]).toLowerCase(),
           });
         }
+        const inlineIdx = def.match(/(?:unique\s+)?(?:index|key)\s+([`"\[\]\w.]+)\s*\(([^)]+)\)/i);
+        if (inlineIdx) {
+          const isUnique = /unique/i.test(def);
+          const idxName = unquote(inlineIdx[1]);
+          const idxCols = inlineIdx[2].split(",").map((c) => unquote(c).trim().toLowerCase());
+          pendingIndexes.push({
+            tableName: rawName.toLowerCase(),
+            name: idxName,
+            columns: idxCols,
+            isUnique,
+          });
+        }
         continue;
       }
 
@@ -151,13 +203,32 @@ export function parseSql(sql: string): ParseResult {
       const typeRaw = (tokens[2] ?? "varchar").trim();
       const rest = (tokens[3] ?? "").toLowerCase();
 
+      let normType = normalizeType(typeRaw);
+      let values: string[] | undefined;
+
+      const lowerTypeRaw = typeRaw.toLowerCase();
+      if (lowerTypeRaw.startsWith("enum")) {
+        const enumMatch = typeRaw.match(/enum\s*\(([^)]+)\)/i);
+        if (enumMatch) {
+          normType = "enum";
+          values = enumMatch[1]
+            .split(",")
+            .map((v) => v.trim().replace(/^['"]|['"]$/g, ""))
+            .filter(Boolean);
+        }
+      } else if (pgEnums.has(lowerTypeRaw)) {
+        normType = "enum";
+        values = pgEnums.get(lowerTypeRaw);
+      }
+
       const col: Column = {
         id: uid("col"),
         name,
-        type: normalizeType(typeRaw),
+        type: normType,
         isPrimary: /primary\s+key/.test(rest),
         isNullable: !/not\s+null/.test(rest) && !/primary\s+key/.test(rest),
         isUnique: /\bunique\b/.test(rest),
+        values,
       };
       const def2 = def.match(/default\s+([^,]+?)(?:\s+(?:not null|primary|unique|references|check)|$)/i);
       if (def2) col.defaultValue = def2[1].trim();
@@ -202,6 +273,32 @@ export function parseSql(sql: string): ParseResult {
       columns,
     });
     index++;
+  }
+
+  // resolve pending indexes
+  for (const pi of pendingIndexes) {
+    const table = tables.find((t) => t.name.toLowerCase() === pi.tableName);
+    if (!table) continue;
+
+    const colIds = pi.columns
+      .map((cName) => {
+        const col = table.columns.find((c) => c.name.toLowerCase() === cName);
+        return col?.id;
+      })
+      .filter((cid): cid is string => !!cid);
+
+    if (colIds.length === 0) continue;
+
+    if (!table.indexes) table.indexes = [];
+    const exists = table.indexes.some((x) => x.name.toLowerCase() === pi.name.toLowerCase());
+    if (!exists) {
+      table.indexes.push({
+        id: uid("idx"),
+        name: pi.name,
+        columnIds: colIds,
+        isUnique: pi.isUnique,
+      });
+    }
   }
 
   if (tables.length === 0) {
@@ -268,6 +365,23 @@ export function mergeDiagrams(existing: Diagram, parsed: Diagram): Diagram {
           : parsedCol;
       });
 
+      const colIdMap = new Map<string, string>();
+      parsedTable.columns.forEach((c, idx) => {
+        colIdMap.set(c.id, mergedColumns[idx].id);
+      });
+
+      // Merge indexes to preserve index IDs if index names match
+      const mergedIndexes = (parsedTable.indexes || []).map((parsedIdx) => {
+        const existingIdx = (existingTable.indexes || []).find(
+          (idx) => idx.name.toLowerCase() === parsedIdx.name.toLowerCase()
+        );
+        return {
+          ...parsedIdx,
+          id: existingIdx ? existingIdx.id : parsedIdx.id,
+          columnIds: parsedIdx.columnIds.map((cid) => colIdMap.get(cid) || cid),
+        };
+      });
+
       return {
         ...parsedTable,
         id: tableId,
@@ -275,6 +389,7 @@ export function mergeDiagrams(existing: Diagram, parsed: Diagram): Diagram {
         y: existingTable.y,
         color: existingTable.color,
         columns: mergedColumns,
+        indexes: mergedIndexes,
       };
     }
 
