@@ -6,8 +6,8 @@ import {
   useState,
   forwardRef,
 } from "react";
-import { toPng } from "html-to-image";
-import { Plus, Minus, Maximize2, MousePointer2, Grid, Locate, BoxSelect } from "lucide-react";
+import { toPng, toSvg } from "html-to-image";
+import { Plus, Minus, Maximize2, MousePointer2, Grid, Locate, BoxSelect, Database } from "lucide-react";
 import { TableNode } from "./TableNode";
 import { toast } from "sonner";
 import {
@@ -127,12 +127,13 @@ const KIND_LABELS: Record<RelationKind, string> = {
 };
 
 export type CanvasHandle = {
-  exportPng: (filename: string) => Promise<void>;
+  exportPng: (filename: string, transparent?: boolean) => Promise<void>;
+  exportSvg: (filename: string) => Promise<void>;
   fitView: () => void;
   zoomToSelection: () => void;
 };
 
-export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
+export const Canvas = forwardRef<CanvasHandle, { includeWatermark?: boolean }>(function Canvas({ includeWatermark = true }, ref) {
   const diagram = useDiagram();
   const selectedId = useSelectedTableId();
   const selectedIds = useSelectedTableIds();
@@ -537,6 +538,37 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
 
   // ---- export PNG ----
   const exportPng = useCallback(
+    async (filename: string, transparent = false) => {
+      const container = containerRef.current;
+      if (!container || diagram.tables.length === 0) throw new Error("Nothing to export");
+      const previousVp = vp;
+      fitView();
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+      try {
+        const backgroundColor = transparent ? "transparent" : getComputedStyle(container).backgroundColor;
+        const dataUrl = await toPng(container, {
+          pixelRatio: 2,
+          backgroundColor,
+          cacheBust: true,
+          style: transparent ? {
+            backgroundImage: "none",
+          } : {},
+          filter: (node) => {
+            if (node instanceof HTMLElement && node.dataset.exportIgnore !== undefined) return false;
+            return true;
+          },
+        });
+        downloadDataUrl(dataUrl, filename);
+      } finally {
+        setVp(previousVp);
+      }
+    },
+    [diagram.tables.length, fitView, vp],
+  );
+
+  const exportSvg = useCallback(
     async (filename: string) => {
       const container = containerRef.current;
       if (!container || diagram.tables.length === 0) throw new Error("Nothing to export");
@@ -546,11 +578,13 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
       });
       try {
-        const backgroundColor = getComputedStyle(container).backgroundColor;
-        const dataUrl = await toPng(container, {
+        const dataUrl = await toSvg(container, {
           pixelRatio: 2,
-          backgroundColor,
+          backgroundColor: "transparent",
           cacheBust: true,
+          style: {
+            backgroundImage: "none",
+          },
           filter: (node) => {
             if (node instanceof HTMLElement && node.dataset.exportIgnore !== undefined) return false;
             return true;
@@ -566,8 +600,8 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
 
   useImperativeHandle(
     ref,
-    () => ({ exportPng, fitView, zoomToSelection }),
-    [exportPng, fitView, zoomToSelection],
+    () => ({ exportPng, exportSvg, fitView, zoomToSelection }),
+    [exportPng, exportSvg, fitView, zoomToSelection],
   );
 
   const zoom = (dir: 1 | -1) => {
@@ -770,6 +804,16 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
           <MousePointer2 className="h-8 w-8" />
           <p className="text-sm font-medium">Double-click anywhere to add a table</p>
           <p className="text-xs opacity-60">Shift-drag to marquee-select multiple tables</p>
+        </div>
+      )}
+
+      {/* canvas watermark */}
+      {includeWatermark && (
+        <div
+          className="pointer-events-none absolute bottom-[148px] left-4 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/30 z-30 select-none"
+        >
+          <Database className="h-3.5 w-3.5" />
+          <span>OpenFlowDB Designer</span>
         </div>
       )}
 

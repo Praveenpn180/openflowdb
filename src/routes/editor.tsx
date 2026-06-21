@@ -95,6 +95,7 @@ function EditorPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
+  const [includeWatermark, setIncludeWatermark] = useState(true);
 
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -254,6 +255,17 @@ function EditorPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
+  useEffect(() => {
+    if (!canUndo) return;
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "You have unsaved changes. Are you sure you want to leave?";
+      return e.returnValue;
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [canUndo]);
+
   // ── Loading state ─────────────────────────────────────────────────────────────
 
   if (cloudLoading) {
@@ -340,6 +352,8 @@ function EditorPage() {
             canvasRef={canvasRef}
             onImportSql={() => setImportOpen(true)}
             readOnly={readOnly}
+            includeWatermark={includeWatermark}
+            onToggleWatermark={() => setIncludeWatermark(!includeWatermark)}
           />
 
           {/* Share button (only if cloud diagram) */}
@@ -492,7 +506,7 @@ function EditorPage() {
 
         {/* ---- center: canvas ---- */}
         <main className="relative min-w-0 flex-1">
-          <Canvas ref={canvasRef} />
+          <Canvas ref={canvasRef} includeWatermark={includeWatermark} />
           {selectedIds.size > 1 && !readOnly && (
             <BulkActionBar
               selectedIds={selectedIds}
