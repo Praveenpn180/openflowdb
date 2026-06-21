@@ -27,6 +27,8 @@ let state: State = {
   future: [],
 };
 
+let clipboardTable: Table | null = null;
+
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -473,5 +475,159 @@ export const actions = {
     });
 
     return { success, errors };
+  },
+
+  duplicateTable(tableId: string) {
+    let createdId = "";
+    setState((s) => {
+      const table = s.diagram.tables.find((t) => t.id === tableId);
+      if (!table) return s;
+
+      const newTableId = uid("tbl");
+      const clonedColumns = table.columns.map((c) => ({
+        ...c,
+        id: uid("col"),
+      }));
+
+      const clonedTable: Table = {
+        ...table,
+        id: newTableId,
+        name: `${table.name}_copy`,
+        x: table.x + 32,
+        y: table.y + 32,
+        columns: clonedColumns,
+        isLocked: false,
+      };
+
+      createdId = newTableId;
+      const past = [...s.past.slice(-(HISTORY_LIMIT - 1)), s.diagram];
+      return {
+        ...s,
+        selectedTableId: newTableId,
+        selectedTableIds: new Set([newTableId]),
+        past,
+        future: [],
+        diagram: {
+          ...s.diagram,
+          tables: [...s.diagram.tables, clonedTable],
+        },
+      };
+    });
+    return createdId;
+  },
+
+  copyTable(tableId: string) {
+    const table = state.diagram.tables.find((t) => t.id === tableId);
+    if (table) {
+      clipboardTable = JSON.parse(JSON.stringify(table));
+    }
+  },
+
+  pasteTable() {
+    if (!clipboardTable) return null;
+    let createdId = "";
+    setState((s) => {
+      if (!clipboardTable) return s;
+      const newTableId = uid("tbl");
+      const clonedColumns = clipboardTable.columns.map((c) => ({
+        ...c,
+        id: uid("col"),
+      }));
+
+      const pastedTable: Table = {
+        ...clipboardTable,
+        id: newTableId,
+        x: clipboardTable.x + 32,
+        y: clipboardTable.y + 32,
+        columns: clonedColumns,
+        isLocked: false,
+      };
+
+      clipboardTable = pastedTable;
+      createdId = newTableId;
+
+      const past = [...s.past.slice(-(HISTORY_LIMIT - 1)), s.diagram];
+      return {
+        ...s,
+        selectedTableId: newTableId,
+        selectedTableIds: new Set([newTableId]),
+        past,
+        future: [],
+        diagram: {
+          ...s.diagram,
+          tables: [...s.diagram.tables, pastedTable],
+        },
+      };
+    });
+    return createdId;
+  },
+
+  alignSelected(direction: "left" | "top") {
+    updateDiagram((d) => {
+      const selectedTables = d.tables.filter((t) => state.selectedTableIds.has(t.id));
+      if (selectedTables.length <= 1) return d;
+
+      if (direction === "left") {
+        const minX = Math.min(...selectedTables.map((t) => t.x));
+        return {
+          ...d,
+          tables: d.tables.map((t) =>
+            state.selectedTableIds.has(t.id) && !t.isLocked ? { ...t, x: minX } : t,
+          ),
+        };
+      } else {
+        const minY = Math.min(...selectedTables.map((t) => t.y));
+        return {
+          ...d,
+          tables: d.tables.map((t) =>
+            state.selectedTableIds.has(t.id) && !t.isLocked ? { ...t, y: minY } : t,
+          ),
+        };
+      }
+    });
+  },
+
+  distributeSelected(direction: "horizontal" | "vertical") {
+    updateDiagram((d) => {
+      const selectedTables = d.tables.filter((t) => state.selectedTableIds.has(t.id));
+      const activeTables = selectedTables.filter((t) => !t.isLocked);
+      if (activeTables.length < 3) return d;
+
+      if (direction === "horizontal") {
+        const sorted = [...activeTables].sort((a, b) => a.x - b.x);
+        const minX = sorted[0].x;
+        const maxX = sorted[sorted.length - 1].x;
+        const step = (maxX - minX) / (sorted.length - 1);
+
+        const updatedPositions = new Map<string, number>();
+        sorted.forEach((t, i) => {
+          updatedPositions.set(t.id, Math.round(minX + i * step));
+        });
+
+        return {
+          ...d,
+          tables: d.tables.map((t) =>
+            updatedPositions.has(t.id) ? { ...t, x: updatedPositions.get(t.id)! } : t,
+          ),
+        };
+      } else {
+        const sorted = [...activeTables].sort((a, b) => a.y - b.y);
+        const minY = sorted[0].y;
+        const maxY = sorted[sorted.length - 1].y;
+        const step = (maxY - minY) / (sorted.length - 1);
+
+        const updatedPositions = new Map<string, number>();
+        sorted.forEach((t, i) => {
+          updatedPositions.set(t.id, Math.round(minY + i * step));
+        });
+
+        return {
+          ...d,
+          tables: d.tables.map((t) =>
+            updatedPositions.has(t.id) ? { ...t, y: updatedPositions.get(t.id)! } : t,
+          ),
+        };
+      }
+    });
   },
 };

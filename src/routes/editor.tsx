@@ -22,6 +22,10 @@ import {
   CloudOff,
   Loader2,
   LayoutDashboard,
+  AlignStartVertical,
+  AlignStartHorizontal,
+  AlignHorizontalDistributeCenter,
+  AlignVerticalDistributeCenter,
 } from "lucide-react";
 import { Canvas, type CanvasHandle } from "@/components/erd/Canvas";
 import { DiagramFileMenu } from "@/components/erd/DiagramFileMenu";
@@ -207,6 +211,28 @@ function EditorPage() {
       if (mod && e.key === "s") { e.preventDefault(); handleManualSave(); return; }
 
       if (isEditing) return;
+
+      if (mod && e.key === "d") {
+        e.preventDefault();
+        if (selectedId) actions.duplicateTable(selectedId);
+        return;
+      }
+      if (mod && e.key === "c") {
+        e.preventDefault();
+        if (selectedId) {
+          actions.copyTable(selectedId);
+          toast.success("Table copied to clipboard");
+        }
+        return;
+      }
+      if (mod && e.key === "v") {
+        e.preventDefault();
+        const pastedId = actions.pasteTable();
+        if (pastedId) {
+          toast.success("Table pasted");
+        }
+        return;
+      }
 
       if (mod && e.key === "t") { e.preventDefault(); actions.addTable(); return; }
       if (mod && e.key === "l") { e.preventDefault(); actions.autoLayout(); return; }
@@ -535,7 +561,7 @@ function BulkActionBar({ selectedIds, onDelete }: { selectedIds: Set<string>; on
   return (
     <div
       data-export-ignore
-      className="absolute bottom-16 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl border bg-card/95 px-4 py-2 shadow-xl backdrop-blur"
+      className="absolute bottom-16 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl border bg-card/95 px-4 py-2 shadow-xl backdrop-blur z-30"
     >
       <span className="text-xs font-medium text-muted-foreground">{selectedIds.size} tables selected</span>
       <div className="h-4 w-px bg-border" />
@@ -544,14 +570,55 @@ function BulkActionBar({ selectedIds, onDelete }: { selectedIds: Set<string>; on
           <button
             key={color}
             onClick={() => actions.bulkRecolorTables([...selectedIds], color)}
-            className="h-5 w-5 rounded-full border-2 border-transparent transition hover:scale-110 hover:border-white"
+            className="h-5 w-5 rounded-full border-2 border-transparent transition hover:scale-110 hover:border-white cursor-pointer"
             style={{ background: color }}
             title={`Recolor to ${color}`}
           />
         ))}
       </div>
       <div className="h-4 w-px bg-border" />
-      <Button size="sm" variant="destructive" className="h-7" onClick={onDelete}>
+      <div className="flex gap-0.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground cursor-pointer"
+          onClick={() => actions.alignSelected("left")}
+          title="Align Left"
+        >
+          <AlignStartVertical className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground cursor-pointer"
+          onClick={() => actions.alignSelected("top")}
+          title="Align Top"
+        >
+          <AlignStartHorizontal className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground cursor-pointer"
+          onClick={() => actions.distributeSelected("horizontal")}
+          disabled={selectedIds.size < 3}
+          title="Distribute Horizontally (requires 3+ tables)"
+        >
+          <AlignHorizontalDistributeCenter className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground cursor-pointer"
+          onClick={() => actions.distributeSelected("vertical")}
+          disabled={selectedIds.size < 3}
+          title="Distribute Vertically (requires 3+ tables)"
+        >
+          <AlignVerticalDistributeCenter className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="h-4 w-px bg-border" />
+      <Button size="sm" variant="destructive" className="h-7 cursor-pointer" onClick={onDelete}>
         <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
       </Button>
     </div>
