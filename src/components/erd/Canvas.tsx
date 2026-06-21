@@ -7,7 +7,7 @@ import {
   forwardRef,
 } from "react";
 import { toPng } from "html-to-image";
-import { Plus, Minus, Maximize2, MousePointer2, Grid, Locate } from "lucide-react";
+import { Plus, Minus, Maximize2, MousePointer2, Grid, Locate, BoxSelect } from "lucide-react";
 import { TableNode } from "./TableNode";
 import { toast } from "sonner";
 import {
@@ -143,6 +143,7 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [kindPicker, setKindPicker] = useState<KindPicker | null>(null);
   const [snapToGrid, setSnapToGrid] = useState(false);
+  const [canvasMode, setCanvasMode] = useState<"select" | "marquee">("select");
   const [connHover, setConnHover] = useState<{
     tableId: string;
     columnId: string;
@@ -220,7 +221,7 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
 
       const world = toWorld(e.clientX, e.clientY);
 
-      if (e.shiftKey) {
+      if (e.shiftKey || canvasMode === "marquee") {
         // start marquee selection
         marqueeStartRef.current = { worldX: world.x, worldY: world.y };
         setMarquee({ startX: world.x, startY: world.y, endX: world.x, endY: world.y });
@@ -232,7 +233,7 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
         (e.target as HTMLElement).setPointerCapture(e.pointerId);
       }
     },
-    [toWorld, vp.x, vp.y],
+    [toWorld, vp.x, vp.y, canvasMode],
   );
 
   // ---- table header pointer down: drag (single or multi) ----
@@ -618,7 +619,7 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
         backgroundImage: "radial-gradient(var(--canvas-grid) 1px, transparent 1px)",
         backgroundSize: `${gridSize}px ${gridSize}px`,
         backgroundPosition: `${vp.x}px ${vp.y}px`,
-        cursor: panState.current ? "grabbing" : "default",
+        cursor: panState.current ? "grabbing" : canvasMode === "marquee" ? "crosshair" : "default",
       }}
     >
       <div
@@ -837,6 +838,31 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
           title="Zoom to selection"
         >
           <Locate className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* selection mode toolbar */}
+      <div
+        data-export-ignore
+        className="absolute bottom-4 left-[182px] flex items-center gap-1 rounded-lg border bg-card/90 p-1 shadow-lg backdrop-blur z-30"
+      >
+        <Button
+          variant={canvasMode === "select" ? "default" : "ghost"}
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => setCanvasMode("select")}
+          title="Pointer tool (Select & Drag)"
+        >
+          <MousePointer2 className="h-4 w-4" />
+        </Button>
+        <Button
+          variant={canvasMode === "marquee" ? "default" : "ghost"}
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => setCanvasMode("marquee")}
+          title="Marquee Selection tool"
+        >
+          <BoxSelect className="h-4 w-4" />
         </Button>
       </div>
     </div>

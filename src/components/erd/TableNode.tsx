@@ -1,10 +1,20 @@
 import { memo, useMemo } from "react";
 import { Trash2, KeyRound, Hash, Link2, AlertTriangle, AlertCircle, Lock, Unlock, ChevronDown, ChevronRight } from "lucide-react";
 import type { Table } from "@/lib/erd/types";
-import { HEADER_HEIGHT, ROW_HEIGHT, TABLE_WIDTH } from "@/lib/erd/types";
+import { HEADER_HEIGHT, ROW_HEIGHT, TABLE_WIDTH, TABLE_COLORS } from "@/lib/erd/types";
 import { cn } from "@/lib/utils";
 import { useDiagram, actions } from "@/lib/erd/store";
 import { validateTable } from "@/lib/erd/validation";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+} from "@/components/ui/context-menu";
 
 interface Props {
   table: Table;
@@ -67,202 +77,283 @@ export const TableNode = memo(function TableNode({
       : "hover:shadow-xl";
 
   return (
-    <div
-      data-table-id={table.id}
-      onPointerDown={() => onSelect(table.id)}
-      onPointerEnter={() => onHoverTable?.(table.id)}
-      onPointerLeave={() => onHoverTable?.(null)}
-      className={cn(
-        "absolute select-none rounded-xl border bg-card shadow-lg transition-shadow",
-        ringClass,
-      )}
-      style={{ left: table.x, top: table.y, width: TABLE_WIDTH }}
-    >
-      {/* ---- header ---- */}
-      <div
-        onPointerDown={(e) => !table.isLocked && onHeaderPointerDown(e, table.id)}
-        className={cn(
-          "group relative flex items-center justify-between gap-2 rounded-t-xl px-3",
-          table.isLocked ? "cursor-default" : "cursor-grab active:cursor-grabbing",
-          table.isCollapsed && "rounded-b-xl"
-        )}
-        style={{ height: HEADER_HEIGHT, background: table.color }}
-      >
-        <div className="flex items-center gap-1.5 min-w-0 flex-1" title={table.description}>
-          {/* Collapse/expand button */}
-          <button
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              actions.updateTable(table.id, { isCollapsed: !table.isCollapsed });
-            }}
-            className="rounded text-white/70 hover:bg-black/20 hover:text-white p-0.5 transition cursor-pointer"
-            title={table.isCollapsed ? "Expand table" : "Collapse table"}
-          >
-            {table.isCollapsed ? (
-              <ChevronRight className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronDown className="h-3.5 w-3.5" />
+    <ContextMenu>
+      <ContextMenuTrigger>
+        <div
+          data-table-id={table.id}
+          onPointerDown={() => onSelect(table.id)}
+          onPointerEnter={() => onHoverTable?.(table.id)}
+          onPointerLeave={() => onHoverTable?.(null)}
+          className={cn(
+            "absolute select-none rounded-xl border bg-card shadow-lg transition-shadow",
+            ringClass,
+          )}
+          style={{ left: table.x, top: table.y, width: TABLE_WIDTH }}
+        >
+          {/* ---- header ---- */}
+          <div
+            onPointerDown={(e) => !table.isLocked && onHeaderPointerDown(e, table.id)}
+            className={cn(
+              "group relative flex items-center justify-between gap-2 rounded-t-xl px-3",
+              table.isLocked ? "cursor-default" : "cursor-grab active:cursor-grabbing",
+              table.isCollapsed && "rounded-b-xl"
             )}
-          </button>
-
-          <span className="truncate text-sm font-semibold text-white">{table.name}</span>
-
-          {/* Lock indicator */}
-          {table.isLocked && (
-            <span title="Position locked" className="flex items-center">
-              <Lock className="h-3 w-3 shrink-0 text-white/80" />
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1">
-          {/* validation summary badge */}
-          {hasIssues && (
-            <span
-              onPointerDown={(e) => e.stopPropagation()}
-              title={issues.map((i) => i.message).join("\n")}
-              className={cn(
-                "flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none",
-                errorCount > 0
-                  ? "bg-destructive/90 text-white"
-                  : "bg-amber-500/90 text-white",
-              )}
-            >
-              {errorCount > 0 ? (
-                <AlertCircle className="h-2.5 w-2.5" />
-              ) : (
-                <AlertTriangle className="h-2.5 w-2.5" />
-              )}
-              {errorCount > 0 ? errorCount : warningCount}
-            </span>
-          )}
-
-          {/* Lock toggle button */}
-          <button
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              actions.updateTable(table.id, { isLocked: !table.isLocked });
-            }}
-            className="rounded p-1 text-white/70 opacity-0 transition hover:bg-black/20 hover:text-white group-hover:opacity-100 cursor-pointer"
-            title={table.isLocked ? "Unlock position" : "Lock position"}
+            style={{ height: HEADER_HEIGHT, background: table.color }}
           >
-            {table.isLocked ? (
-              <Lock className="h-3.5 w-3.5" />
-            ) : (
-              <Unlock className="h-3.5 w-3.5" />
-            )}
-          </button>
-
-          <button
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(table.id);
-            }}
-            className="rounded p-1 text-white/70 opacity-0 transition hover:bg-black/20 hover:text-white group-hover:opacity-100 cursor-pointer"
-            aria-label="Delete table"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* ---- columns ---- */}
-      {!table.isCollapsed && (
-        <div className="rounded-b-xl">
-          {table.columns.length === 0 && (
-            <div className="flex items-center gap-2 rounded-b-xl border-t border-border/60 px-3 py-2 text-xs text-muted-foreground italic">
-              No columns
-            </div>
-          )}
-          {table.columns.map((col, i) => {
-            const colIssues = issuesByColumn.get(col.id) ?? [];
-            const colHasError = colIssues.some((ci) => ci.severity === "error");
-            const colHasWarning = colIssues.some((ci) => ci.severity === "warning");
-            const isHoveredTarget = connHover?.columnId === col.id;
-            const isHoveredTargetValid = connHover?.isValid;
-
-            return (
-              <div
-                key={col.id}
-                data-col-id={col.id}
-                data-table-id={table.id}
-                onPointerEnter={() => onHoverColumn?.(col.id)}
-                onPointerLeave={() => onHoverColumn?.(null)}
-                className={cn(
-                  "group/row relative flex items-center gap-2 border-t border-border/60 px-3 text-xs transition-colors",
-                  i === table.columns.length - 1 && "rounded-b-xl",
-                  connecting && "hover:bg-accent",
-                  colHasError && "bg-destructive/5",
-                  colHasWarning && !colHasError && "bg-amber-500/5",
-                  isHoveredTarget && isHoveredTargetValid && "bg-emerald-500/15! ring-1 ring-emerald-500/50!",
-                  isHoveredTarget && !isHoveredTargetValid && "bg-destructive/15! ring-1 ring-destructive/50!",
-                )}
-                style={{ height: ROW_HEIGHT }}
-                title={
-                  colIssues.length > 0
-                    ? [...colIssues.map((ci) => ci.message), col.comment].filter(Boolean).join("\n")
-                    : col.comment
-                }
+            <div className="flex items-center gap-1.5 min-w-0 flex-1" title={table.description}>
+              {/* Collapse/expand button */}
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  actions.updateTable(table.id, { isCollapsed: !table.isCollapsed });
+                }}
+                className="rounded text-white/70 hover:bg-black/20 hover:text-white p-0.5 transition cursor-pointer"
+                title={table.isCollapsed ? "Expand table" : "Collapse table"}
               >
-                {/* left connection handle */}
-                <Handle
-                  side="left"
-                  onPointerDown={(e) => onHandlePointerDown(e, table.id, col.id)}
-                />
+                {table.isCollapsed ? (
+                  <ChevronRight className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+              </button>
 
-                {/* column type icon */}
-                <span className="flex w-4 justify-center text-muted-foreground">
-                  {col.isPrimary ? (
-                    <KeyRound className="h-3 w-3 text-amber-500" />
-                  ) : col.isUnique ? (
-                    <Hash className="h-3 w-3 text-sky-500" />
-                  ) : (
-                    <Link2 className="h-3 w-3 opacity-0" />
-                  )}
+              <span className="truncate text-sm font-semibold text-white">{table.name}</span>
+
+              {/* Lock indicator */}
+              {table.isLocked && (
+                <span title="Position locked" className="flex items-center">
+                  <Lock className="h-3 w-3 shrink-0 text-white/80" />
                 </span>
+              )}
+            </div>
 
-                {/* column name */}
+            <div className="flex items-center gap-1">
+              {/* validation summary badge */}
+              {hasIssues && (
                 <span
+                  onPointerDown={(e) => e.stopPropagation()}
+                  title={issues.map((i) => i.message).join("\n")}
                   className={cn(
-                    "flex-1 truncate font-medium",
-                    col.isPrimary && "text-foreground",
-                    colHasError && "text-destructive",
+                    "flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none",
+                    errorCount > 0
+                      ? "bg-destructive/90 text-white"
+                      : "bg-amber-500/90 text-white",
                   )}
                 >
-                  {col.name || <em className="opacity-50">unnamed</em>}
-                  {!col.isNullable && <span className="text-destructive"> *</span>}
+                  {errorCount > 0 ? (
+                    <AlertCircle className="h-2.5 w-2.5" />
+                  ) : (
+                    <AlertTriangle className="h-2.5 w-2.5" />
+                  )}
+                  {errorCount > 0 ? errorCount : warningCount}
                 </span>
+              )}
 
-                {/* column type */}
-                <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {col.type}
-                </span>
-
-                {/* per-column issue indicator */}
-                {colIssues.length > 0 && (
-                  <span className="shrink-0">
-                    {colHasError ? (
-                      <AlertCircle className="h-3 w-3 text-destructive" />
-                    ) : (
-                      <AlertTriangle className="h-3 w-3 text-amber-500" />
-                    )}
-                  </span>
+              {/* Lock toggle button */}
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  actions.updateTable(table.id, { isLocked: !table.isLocked });
+                }}
+                className="rounded p-1 text-white/70 opacity-0 transition hover:bg-black/20 hover:text-white group-hover:opacity-100 cursor-pointer"
+                title={table.isLocked ? "Unlock position" : "Lock position"}
+              >
+                {table.isLocked ? (
+                  <Lock className="h-3.5 w-3.5" />
+                ) : (
+                  <Unlock className="h-3.5 w-3.5" />
                 )}
+              </button>
 
-                {/* right connection handle */}
-                <Handle
-                  side="right"
-                  onPointerDown={(e) => onHandlePointerDown(e, table.id, col.id)}
-                />
-              </div>
-            );
-          })}
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(table.id);
+                }}
+                className="rounded p-1 text-white/70 opacity-0 transition hover:bg-black/20 hover:text-white group-hover:opacity-100 cursor-pointer"
+                aria-label="Delete table"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* ---- columns ---- */}
+          {!table.isCollapsed && (
+            <div className="rounded-b-xl">
+              {table.columns.length === 0 && (
+                <div className="flex items-center gap-2 rounded-b-xl border-t border-border/60 px-3 py-2 text-xs text-muted-foreground italic">
+                  No columns
+                </div>
+              )}
+              {table.columns.map((col, i) => {
+                const colIssues = issuesByColumn.get(col.id) ?? [];
+                const colHasError = colIssues.some((ci) => ci.severity === "error");
+                const colHasWarning = colIssues.some((ci) => ci.severity === "warning");
+                const isHoveredTarget = connHover?.columnId === col.id;
+                const isHoveredTargetValid = connHover?.isValid;
+
+                return (
+                  <ContextMenu key={col.id}>
+                    <ContextMenuTrigger>
+                      <div
+                        data-col-id={col.id}
+                        data-table-id={table.id}
+                        onPointerEnter={() => onHoverColumn?.(col.id)}
+                        onPointerLeave={() => onHoverColumn?.(null)}
+                        className={cn(
+                          "group/row relative flex items-center gap-2 border-t border-border/60 px-3 text-xs transition-colors",
+                          i === table.columns.length - 1 && "rounded-b-xl",
+                          connecting && "hover:bg-accent",
+                          colHasError && "bg-destructive/5",
+                          colHasWarning && !colHasError && "bg-amber-500/5",
+                          isHoveredTarget && isHoveredTargetValid && "bg-emerald-500/15! ring-1 ring-emerald-500/50!",
+                          isHoveredTarget && !isHoveredTargetValid && "bg-destructive/15! ring-1 ring-destructive/50!",
+                        )}
+                        style={{ height: ROW_HEIGHT }}
+                        title={
+                          colIssues.length > 0
+                            ? [...colIssues.map((ci) => ci.message), col.comment].filter(Boolean).join("\n")
+                            : col.comment
+                        }
+                      >
+                        {/* left connection handle */}
+                        <Handle
+                          side="left"
+                          onPointerDown={(e) => onHandlePointerDown(e, table.id, col.id)}
+                        />
+
+                        {/* column type icon */}
+                        <span className="flex w-4 justify-center text-muted-foreground">
+                          {col.isPrimary ? (
+                            <KeyRound className="h-3 w-3 text-amber-500" />
+                          ) : col.isUnique ? (
+                            <Hash className="h-3 w-3 text-sky-500" />
+                          ) : (
+                            <Link2 className="h-3 w-3 opacity-0" />
+                          )}
+                        </span>
+
+                        {/* column name */}
+                        <span
+                          className={cn(
+                            "flex-1 truncate font-medium",
+                            col.isPrimary && "text-foreground",
+                            colHasError && "text-destructive",
+                          )}
+                        >
+                          {col.name || <em className="opacity-50">unnamed</em>}
+                          {!col.isNullable && <span className="text-destructive"> *</span>}
+                        </span>
+
+                        {/* column type */}
+                        <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+                          {col.type}
+                        </span>
+
+                        {/* per-column issue indicator */}
+                        {colIssues.length > 0 && (
+                          <span className="shrink-0">
+                            {colHasError ? (
+                              <AlertCircle className="h-3 w-3 text-destructive" />
+                            ) : (
+                              <AlertTriangle className="h-3 w-3 text-amber-500" />
+                            )}
+                          </span>
+                        )}
+
+                        {/* right connection handle */}
+                        <Handle
+                          side="right"
+                          onPointerDown={(e) => onHandlePointerDown(e, table.id, col.id)}
+                        />
+                      </div>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent className="w-48">
+                      <ContextMenuItem
+                        onClick={() => actions.moveColumn(table.id, col.id, "up")}
+                        disabled={i === 0}
+                      >
+                        Move Up
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onClick={() => actions.moveColumn(table.id, col.id, "down")}
+                        disabled={i === table.columns.length - 1}
+                      >
+                        Move Down
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        onClick={() => actions.updateColumn(table.id, col.id, { isPrimary: !col.isPrimary })}
+                      >
+                        {col.isPrimary ? "Remove Primary Key" : "Set Primary Key"}
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onClick={() => actions.updateColumn(table.id, col.id, { isUnique: !col.isUnique })}
+                      >
+                        {col.isUnique ? "Remove Unique" : "Set Unique"}
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onClick={() => actions.updateColumn(table.id, col.id, { isNullable: !col.isNullable })}
+                      >
+                        {col.isNullable ? "Set NOT NULL" : "Set Nullable"}
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        onClick={() => actions.removeColumn(table.id, col.id)}
+                        className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                      >
+                        Delete Column
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent className="w-56">
+        <ContextMenuItem onClick={() => actions.addColumn(table.id)}>
+          Add Column
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => actions.duplicateTable(table.id)}>
+          Duplicate Table
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => actions.updateTable(table.id, { isLocked: !table.isLocked })}>
+          {table.isLocked ? "Unlock Table" : "Lock Position"}
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => actions.updateTable(table.id, { isCollapsed: !table.isCollapsed })}>
+          {table.isCollapsed ? "Expand Table" : "Collapse Table"}
+        </ContextMenuItem>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger>Recolor Table</ContextMenuSubTrigger>
+          <ContextMenuSubContent className="w-36 p-2">
+            <div className="grid grid-cols-4 gap-1.5">
+              {TABLE_COLORS.map((color) => (
+                <button
+                  key={color}
+                  onClick={() => actions.updateTable(table.id, { color })}
+                  className={cn(
+                    "h-6 w-6 rounded-full border border-black/20 hover:scale-110 transition cursor-pointer",
+                    table.color === color && "ring-2 ring-primary ring-offset-1"
+                  )}
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        <ContextMenuSeparator />
+        <ContextMenuItem onClick={() => onDelete(table.id)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+          Delete Table
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 });
 
