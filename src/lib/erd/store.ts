@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Column, Diagram, Relationship, Table } from "./types";
+import type { Column, Diagram, Relationship, Table, Index } from "./types";
 import { emptyDiagram, newColumn, newTable, sampleDiagram, uid } from "./factory";
 import { autoLayoutDiagram } from "./layout";
 import { parseSql, mergeDiagrams } from "./parse";
@@ -371,7 +371,16 @@ export const actions = {
       ...d,
       tables: d.tables.map((t) =>
         t.id === tableId
-          ? { ...t, columns: t.columns.filter((c) => c.id !== columnId) }
+          ? {
+              ...t,
+              columns: t.columns.filter((c) => c.id !== columnId),
+              indexes: (t.indexes || [])
+                .map((idx) => ({
+                  ...idx,
+                  columnIds: idx.columnIds.filter((cid) => cid !== columnId),
+                }))
+                .filter((idx) => idx.columnIds.length > 0),
+            }
           : t,
       ),
       relationships: d.relationships.filter(
@@ -489,6 +498,17 @@ export const actions = {
         id: uid("col"),
       }));
 
+      const colIdMap = new Map<string, string>();
+      table.columns.forEach((c, idx) => {
+        colIdMap.set(c.id, clonedColumns[idx].id);
+      });
+
+      const clonedIndexes = (table.indexes || []).map((idx) => ({
+        ...idx,
+        id: uid("idx"),
+        columnIds: idx.columnIds.map((cid) => colIdMap.get(cid) || cid),
+      }));
+
       const clonedTable: Table = {
         ...table,
         id: newTableId,
@@ -496,6 +516,7 @@ export const actions = {
         x: table.x + 32,
         y: table.y + 32,
         columns: clonedColumns,
+        indexes: clonedIndexes,
         isLocked: false,
       };
 
@@ -534,12 +555,24 @@ export const actions = {
         id: uid("col"),
       }));
 
+      const colIdMap = new Map<string, string>();
+      clipboardTable.columns.forEach((c, idx) => {
+        colIdMap.set(c.id, clonedColumns[idx].id);
+      });
+
+      const clonedIndexes = (clipboardTable.indexes || []).map((idx) => ({
+        ...idx,
+        id: uid("idx"),
+        columnIds: idx.columnIds.map((cid) => colIdMap.get(cid) || cid),
+      }));
+
       const pastedTable: Table = {
         ...clipboardTable,
         id: newTableId,
         x: clipboardTable.x + 32,
         y: clipboardTable.y + 32,
         columns: clonedColumns,
+        indexes: clonedIndexes,
         isLocked: false,
       };
 
@@ -629,5 +662,97 @@ export const actions = {
         };
       }
     });
+  },
+
+  // ---- indexes ----
+  addIndex(tableId: string) {
+    updateDiagram((d) => ({
+      ...d,
+      tables: d.tables.map((t) => {
+        if (t.id !== tableId) return t;
+        const indexes = t.indexes || [];
+        const indexName = `idx_${t.name}_${uid("idx").slice(4)}`;
+        return {
+          ...t,
+          indexes: [
+            ...indexes,
+            {
+              id: uid("idx"),
+              name: indexName,
+              columnIds: t.columns.length > 0 ? [t.columns[0].id] : [],
+              isUnique: false,
+            },
+          ],
+        };
+      }),
+    }));
+  },
+
+  updateIndex(tableId: string, indexId: string, patch: Partial<Omit<Index, "id">>) {
+    updateDiagram((d) => ({
+      ...d,
+      tables: d.tables.map((t) => {
+        if (t.id !== tableId) return t;
+        return {
+          ...t,
+          indexes: (t.indexes || []).map((idx) =>
+            idx.id === indexId ? { ...idx, ...patch } : idx
+          ),
+        };
+      }),
+    }));
+  },
+
+  removeIndex(tableId: string, indexId: string) {
+    updateDiagram((d) => ({
+      ...d,
+      tables: d.tables.map((t) => {
+        if (t.id !== tableId) return t;
+        return {
+          ...t,
+          indexes: (t.indexes || []).filter((idx) => idx.id !== indexId),
+        };
+      }),
+    }));
+  },
+
+  // ---- columns ordering & bulk ----
+  reorderColumns(tableId: string, dragColId: string, hoverColId: string) {
+    updateDiagram((d) => ({
+      ...d,
+      tables: d.tables.map((t) => {
+        if (t.id !== tableId) return t;
+        const dragIdx = t.columns.findIndex((c) => c.id === dragColId);
+        const hoverIdx = t.columns.findIndex((c) => c.id === hoverColId);
+        if (dragIdx === -1 || hoverIdx === -1) return t;
+
+        const newColumns = [...t.columns];
+        const [removed] = newColumns.splice(dragIdx, 1);
+        newColumns.splice(hoverIdx, 0, removed);
+
+        return { ...t, columns: newColumns };
+      }),
+    }), false);
+  },
+
+  bulkDeleteColumns(tableId: string, columnIds: string[]) {
+    updateDiagram((d) => ({
+      ...d,
+      tables: d.tables.map((t) =>
+        t.id === tableId
+          ? {
+              ...t,
+              columns: t.columns.filter((c) => !columnIds.includes(c.id)),
+              indexes: (t.indexes || []).map((idx) => ({
+                ...idx,
+                columnIds: idx.columnIds.filter((cid) => !columnIds.includes(cid)),
+              })).filter((idx) => idx.columnIds.length > 0),
+            }
+          : t,
+      ),
+      relationships: d.relationships.filter(
+        (r) => !columnIds.includes(r.sourceColumnId) && !columnIds.includes(r.targetColumnId),
+      ),
+    }));
   },
 };

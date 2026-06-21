@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { Plus, Trash2, KeyRound, Link2, AlertCircle, AlertTriangle, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Trash2, KeyRound, Link2, AlertCircle, AlertTriangle, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
 import { actions, useDiagram, useSelectedTableId, useSelectedTableIds } from "@/lib/erd/store";
-import { COLUMN_TYPES, TABLE_COLORS, type RelationKind } from "@/lib/erd/types";
+import { COLUMN_TYPES, TABLE_COLORS, type RelationKind, type Index } from "@/lib/erd/types";
 import { validateTable } from "@/lib/erd/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,23 @@ export function Inspector() {
   const selectedIds = useSelectedTableIds();
   const table = diagram.tables.find((t) => t.id === selectedId);
   const [newlyAddedColId, setNewlyAddedColId] = useState<string | null>(null);
+
+  const [draggingColId, setDraggingColId] = useState<string | null>(null);
+  const [selectedColIds, setSelectedColIds] = useState<Set<string>>(new Set());
+  const [prevTableId, setPrevTableId] = useState<string | null>(null);
+
+  if (table && table.id !== prevTableId) {
+    setPrevTableId(table.id);
+    setSelectedColIds(new Set());
+  }
+
+  const getBaseAndParams = (fullType: string) => {
+    const t = fullType.toLowerCase().trim();
+    const match = t.match(/^([a-z0-9_]+)(?:\s*\(([^)]+)\))?$/);
+    const base = match ? match[1] : t;
+    const params = match ? match[2] : "";
+    return { base, params };
+  };
 
   // Relationships involving this table (as source or target)
   const tableRelationships = useMemo(() => {
@@ -153,16 +170,31 @@ export function Inspector() {
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Columns
           </h3>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              const newId = actions.addColumn(table.id);
-              setNewlyAddedColId(newId);
-            }}
-          >
-            <Plus className="mr-1 h-3.5 w-3.5" /> Add
-          </Button>
+          <div className="flex items-center gap-2">
+            {selectedColIds.size > 0 && (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  actions.bulkDeleteColumns(table.id, Array.from(selectedColIds));
+                  setSelectedColIds(new Set());
+                }}
+                className="h-7 text-xs px-2"
+              >
+                <Trash2 className="mr-1 h-3 w-3" /> Delete ({selectedColIds.size})
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                const newId = actions.addColumn(table.id);
+                setNewlyAddedColId(newId);
+              }}
+            >
+              <Plus className="mr-1 h-3.5 w-3.5" /> Add
+            </Button>
+          </div>
         </div>
 
         <div className="space-y-3 px-4 pb-4">
@@ -170,11 +202,30 @@ export function Inspector() {
             const isFirst = index === 0;
             const isLast = index === table.columns.length - 1;
             const colIssues = issues.filter((i) => i.columnId === col.id);
+            const { base: typeBase, params: typeParams } = getBaseAndParams(col.type);
+            const isDragging = draggingColId === col.id;
+
             return (
               <div
                 key={col.id}
+                draggable
+                onDragStart={(e) => {
+                  setDraggingColId(col.id);
+                  e.dataTransfer.effectAllowed = "move";
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (draggingColId && draggingColId !== col.id) {
+                    actions.reorderColumns(table.id, draggingColId, col.id);
+                  }
+                }}
+                onDragEnd={() => {
+                  setDraggingColId(null);
+                  actions.commitMove();
+                }}
                 className={cn(
-                  "rounded-lg border border-border bg-muted/30 p-3",
+                  "rounded-lg border border-border bg-muted/30 p-3 transition-opacity",
+                  isDragging && "opacity-40",
                   colIssues.some((i) => i.severity === "error") && "border-destructive/40",
                   colIssues.some((i) => i.severity === "warning") &&
                     !colIssues.some((i) => i.severity === "error") &&
@@ -182,6 +233,23 @@ export function Inspector() {
                 )}
               >
                 <div className="flex items-center gap-2">
+                  <div className="cursor-grab active:cursor-grabbing text-muted-foreground/60 hover:text-foreground transition-colors p-0.5 shrink-0" title="Drag to reorder">
+                    <GripVertical className="h-4 w-4" />
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={selectedColIds.has(col.id)}
+                    onChange={(e) => {
+                      const next = new Set(selectedColIds);
+                      if (e.target.checked) {
+                        next.add(col.id);
+                      } else {
+                        next.delete(col.id);
+                      }
+                      setSelectedColIds(next);
+                    }}
+                    className="h-3.5 w-3.5 rounded border-input text-primary focus:ring-primary cursor-pointer shrink-0"
+                  />
                   <Input
                     ref={(el) => {
                       if (el && newlyAddedColId === col.id) {
@@ -201,7 +269,7 @@ export function Inspector() {
                         setNewlyAddedColId(newId);
                       }
                     }}
-                    className="h-8 text-sm"
+                    className="h-8 text-sm flex-1"
                     placeholder="column_name"
                   />
                   <button
@@ -230,10 +298,14 @@ export function Inspector() {
                 </div>
 
                 <select
-                  value={col.type}
-                  onChange={(e) =>
-                    actions.updateColumn(table.id, col.id, { type: e.target.value })
-                  }
+                  value={typeBase}
+                  onChange={(e) => {
+                    const nextBase = e.target.value;
+                    let nextType = nextBase;
+                    if (nextBase === "varchar") nextType = "varchar(255)";
+                    else if (nextBase === "numeric") nextType = "numeric(10,2)";
+                    actions.updateColumn(table.id, col.id, { type: nextType });
+                  }}
                   className="mt-2 h-8 w-full rounded-md border border-input bg-background px-2 text-xs font-mono"
                 >
                   {COLUMN_TYPES.map((t) => (
@@ -241,10 +313,81 @@ export function Inspector() {
                       {t}
                     </option>
                   ))}
-                  {!COLUMN_TYPES.includes(col.type as never) && (
-                    <option value={col.type}>{col.type}</option>
+                  {!COLUMN_TYPES.includes(typeBase as never) && (
+                    <option value={typeBase}>{typeBase}</option>
                   )}
                 </select>
+
+                {typeBase === "varchar" && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <Label className="text-[11px] text-muted-foreground shrink-0">Length:</Label>
+                    <Input
+                      type="number"
+                      value={typeParams || "255"}
+                      onChange={(e) => {
+                        const len = e.target.value || "255";
+                        actions.updateColumn(table.id, col.id, { type: `varchar(${len})` });
+                      }}
+                      className="h-7 text-xs font-mono w-24"
+                    />
+                  </div>
+                )}
+
+                {(typeBase === "numeric" || typeBase === "decimal") && (
+                  <div className="mt-2 flex items-center gap-4">
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-[11px] text-muted-foreground shrink-0">Precision:</Label>
+                      <Input
+                        type="number"
+                        value={typeParams.split(",")[0] || "10"}
+                        onChange={(e) => {
+                          const prec = e.target.value || "10";
+                          const scale = typeParams.split(",")[1] || "2";
+                          actions.updateColumn(table.id, col.id, { type: `numeric(${prec},${scale})` });
+                        }}
+                        className="h-7 text-xs font-mono w-16"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-[11px] text-muted-foreground shrink-0">Scale:</Label>
+                      <Input
+                        type="number"
+                        value={typeParams.split(",")[1] || "2"}
+                        onChange={(e) => {
+                          const prec = typeParams.split(",")[0] || "10";
+                          const scale = e.target.value || "2";
+                          actions.updateColumn(table.id, col.id, { type: `numeric(${prec},${scale})` });
+                        }}
+                        className="h-7 text-xs font-mono w-16"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {typeBase === "enum" && (
+                  <div className="mt-2 space-y-1.5">
+                    <Label className="text-[11px] text-muted-foreground">Enum values (comma-separated)</Label>
+                    <Input
+                      value={(col.values || []).join(", ")}
+                      onChange={(e) => {
+                        const vals = e.target.value
+                          .split(",")
+                          .map((v) => v.trim())
+                          .filter((v) => v.length > 0);
+                        actions.updateColumn(table.id, col.id, { values: vals });
+                      }}
+                      className="h-7 text-xs font-mono"
+                      placeholder="e.g. active, inactive, pending"
+                    />
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {(col.values || []).map((val) => (
+                        <span key={val} className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary border border-primary/20">
+                          {val}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="mt-3 grid grid-cols-2 gap-y-2 text-xs">
                   <Toggle
@@ -280,6 +423,72 @@ export function Inspector() {
                   className="mt-2 h-7 font-mono text-xs"
                   placeholder="default value (optional)"
                 />
+
+                {/* Default value helper suggestions */}
+                {["boolean", "timestamp", "date", "uuid"].includes(typeBase) && (
+                  <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                    {typeBase === "boolean" && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => actions.updateColumn(table.id, col.id, { defaultValue: "true" })}
+                          className={cn(
+                            "px-2 py-0.5 rounded border text-[10px] hover:bg-muted font-mono transition-colors",
+                            col.defaultValue === "true" ? "border-primary text-primary bg-primary/5" : "text-muted-foreground border-border"
+                          )}
+                        >
+                          true
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => actions.updateColumn(table.id, col.id, { defaultValue: "false" })}
+                          className={cn(
+                            "px-2 py-0.5 rounded border text-[10px] hover:bg-muted font-mono transition-colors",
+                            col.defaultValue === "false" ? "border-primary text-primary bg-primary/5" : "text-muted-foreground border-border"
+                          )}
+                        >
+                          false
+                        </button>
+                      </>
+                    )}
+                    {(typeBase === "timestamp" || typeBase === "date") && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => actions.updateColumn(table.id, col.id, { defaultValue: "now()" })}
+                          className="px-2 py-0.5 rounded border border-border text-[10px] hover:bg-muted text-muted-foreground font-mono transition-colors"
+                        >
+                          now()
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => actions.updateColumn(table.id, col.id, { defaultValue: "CURRENT_TIMESTAMP" })}
+                          className="px-2 py-0.5 rounded border border-border text-[10px] hover:bg-muted text-muted-foreground font-mono transition-colors"
+                        >
+                          CURRENT_TIMESTAMP
+                        </button>
+                      </>
+                    )}
+                    {typeBase === "uuid" && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => actions.updateColumn(table.id, col.id, { defaultValue: "gen_random_uuid()" })}
+                          className="px-2 py-0.5 rounded border border-border text-[10px] hover:bg-muted text-muted-foreground font-mono transition-colors"
+                        >
+                          gen_random_uuid()
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => actions.updateColumn(table.id, col.id, { defaultValue: "uuid_generate_v4()" })}
+                          className="px-2 py-0.5 rounded border border-border text-[10px] hover:bg-muted text-muted-foreground font-mono transition-colors"
+                        >
+                          uuid_generate_v4()
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 <Input
                   value={col.comment ?? ""}
@@ -322,7 +531,7 @@ export function Inspector() {
                 Relationships
               </h3>
             </div>
-            <div className="space-y-2 px-4 pb-6">
+            <div className="space-y-2 px-4 pb-4">
               {tableRelationships.map((rel) => {
                 const isSource = rel.sourceTableId === table.id;
                 const otherTableId = isSource ? rel.targetTableId : rel.sourceTableId;
@@ -388,6 +597,81 @@ export function Inspector() {
             </div>
           </>
         )}
+
+        {/* ---- indexes ---- */}
+        <div className="flex items-center justify-between px-4 py-3 border-t border-border mt-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Indexes
+          </h3>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => actions.addIndex(table.id)}
+          >
+            <Plus className="mr-1 h-3.5 w-3.5" /> Add
+          </Button>
+        </div>
+
+        <div className="space-y-3 px-4 pb-6">
+          {(table.indexes || []).map((idx) => (
+            <div key={idx.id} className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <Input
+                  value={idx.name}
+                  onChange={(e) => actions.updateIndex(table.id, idx.id, { name: e.target.value })}
+                  placeholder="index_name"
+                  className="h-8 text-sm"
+                />
+                <button
+                  onClick={() => actions.removeIndex(table.id, idx.id)}
+                  className="rounded p-1.5 text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive"
+                  aria-label="Delete index"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              {/* Checkbox columns list for index columns selection */}
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">Index Columns</Label>
+                <div className="flex flex-wrap gap-1.5 rounded-md border border-input p-1.5 bg-background">
+                  {table.columns.map((c) => {
+                    const isChecked = idx.columnIds.includes(c.id);
+                    return (
+                      <label key={c.id} className="flex items-center gap-1.5 px-2 py-1 rounded bg-muted/50 hover:bg-muted text-xs cursor-pointer select-none border border-border/40">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            const newCols = e.target.checked
+                              ? [...idx.columnIds, c.id]
+                              : idx.columnIds.filter((cid) => cid !== c.id);
+                            actions.updateIndex(table.id, idx.id, { columnIds: newCols });
+                          }}
+                          className="scale-90"
+                        />
+                        <span className="font-mono">{c.name || "column"}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Unique index constraint */}
+              <div className="flex items-center justify-between text-xs pt-1">
+                <span className="text-muted-foreground">Unique Index</span>
+                <Switch
+                  checked={idx.isUnique}
+                  onCheckedChange={(checked) => actions.updateIndex(table.id, idx.id, { isUnique: checked })}
+                  className="scale-75"
+                />
+              </div>
+            </div>
+          ))}
+          {(table.indexes || []).length === 0 && (
+            <p className="text-xs text-muted-foreground italic px-1 pb-2">No indexes defined.</p>
+          )}
+        </div>
       </div>
     </div>
   );
