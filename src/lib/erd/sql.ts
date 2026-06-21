@@ -49,10 +49,17 @@ function columnLine(col: Column, dialect: Dialect): string {
   if (!col.isNullable) parts.push("NOT NULL");
   if (col.isUnique && !col.isPrimary) parts.push("UNIQUE");
   if (col.defaultValue) parts.push(`DEFAULT ${col.defaultValue}`);
-  return "  " + parts.join(" ");
+  if (dialect === "mysql" && col.comment) {
+    parts.push(`COMMENT '${col.comment.replace(/'/g, "''")}'`);
+  }
+  let line = "  " + parts.join(" ");
+  if (dialect === "sqlite" && col.comment) {
+    line += ` -- ${col.comment.replace(/\n/g, " ")}`;
+  }
+  return line;
 }
 
-function tableSql(table: Table, diagram: Diagram): string {
+export function tableSql(table: Table, diagram: Diagram): string {
   const dialect = diagram.dialect;
   const lines: string[] = table.columns.map((c) => columnLine(c, dialect));
 
@@ -77,7 +84,35 @@ function tableSql(table: Table, diagram: Diagram): string {
     }
   }
 
-  return `CREATE TABLE ${quote(table.name, dialect)} (\n${lines.join(",\n")}\n);`;
+  let tableOptions = "";
+  if (dialect === "mysql" && table.description) {
+    tableOptions = ` COMMENT = '${table.description.replace(/'/g, "''")}'`;
+  }
+
+  const createTable = `CREATE TABLE ${quote(table.name, dialect)} (\n${lines.join(",\n")}\n)${tableOptions};`;
+
+  let sqliteHeader = "";
+  if (dialect === "sqlite" && table.description) {
+    sqliteHeader = `-- Table: ${table.name}\n-- Description: ${table.description.replace(/\n/g, "\n-- ")}\n`;
+  }
+
+  let pgComments = "";
+  if (dialect === "postgres") {
+    const commentsList: string[] = [];
+    if (table.description) {
+      commentsList.push(`COMMENT ON TABLE ${quote(table.name, dialect)} IS '${table.description.replace(/'/g, "''")}';`);
+    }
+    for (const col of table.columns) {
+      if (col.comment) {
+        commentsList.push(`COMMENT ON COLUMN ${quote(table.name, dialect)}.${quote(col.name, dialect)} IS '${col.comment.replace(/'/g, "''")}';`);
+      }
+    }
+    if (commentsList.length > 0) {
+      pgComments = "\n" + commentsList.join("\n");
+    }
+  }
+
+  return sqliteHeader + createTable + pgComments;
 }
 
 export function generateSql(diagram: Diagram): string {

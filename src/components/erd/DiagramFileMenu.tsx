@@ -11,6 +11,7 @@ import {
   Network,
   Upload,
   Settings,
+  Database,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -22,6 +23,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
   DropdownMenuLabel,
+  DropdownMenuCheckboxItem,
 } from "@/components/ui/dropdown-menu";
 import type { CanvasHandle } from "@/components/erd/Canvas";
 import {
@@ -37,10 +39,14 @@ export function DiagramFileMenu({
   canvasRef,
   onImportSql,
   readOnly,
+  includeWatermark,
+  onToggleWatermark,
 }: {
   canvasRef: RefObject<CanvasHandle | null>;
   onImportSql: () => void;
   readOnly?: boolean;
+  includeWatermark: boolean;
+  onToggleWatermark: () => void;
 }) {
   const diagram = useDiagram();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -73,16 +79,42 @@ export function DiagramFileMenu({
     }
   };
 
-  const exportPng = async () => {
+  const exportPngOpaque = async () => {
     if (diagram.tables.length === 0) {
       toast.error("Add tables before exporting an image.");
       return;
     }
     try {
-      await canvasRef.current?.exportPng(`${slugifyDiagramName(diagram.name)}.png`);
-      toast.success("PNG exported");
+      await canvasRef.current?.exportPng(`${slugifyDiagramName(diagram.name)}.png`, false);
+      toast.success("Opaque PNG exported");
     } catch {
       toast.error("Could not export PNG.");
+    }
+  };
+
+  const exportPngTransparent = async () => {
+    if (diagram.tables.length === 0) {
+      toast.error("Add tables before exporting an image.");
+      return;
+    }
+    try {
+      await canvasRef.current?.exportPng(`${slugifyDiagramName(diagram.name)}_transparent.png`, true);
+      toast.success("Transparent PNG exported");
+    } catch {
+      toast.error("Could not export PNG.");
+    }
+  };
+
+  const exportSvg = async () => {
+    if (diagram.tables.length === 0) {
+      toast.error("Add tables before exporting an image.");
+      return;
+    }
+    try {
+      await canvasRef.current?.exportSvg(`${slugifyDiagramName(diagram.name)}.svg`);
+      toast.success("SVG exported");
+    } catch {
+      toast.error("Could not export SVG.");
     }
   };
 
@@ -144,10 +176,25 @@ export function DiagramFileMenu({
             <Network className="mr-2 h-4 w-4" />
             <span>Auto Layout tables</span>
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={exportPng}>
+          <DropdownMenuItem onClick={exportPngOpaque}>
             <Image className="mr-2 h-4 w-4" />
-            <span>Export PNG Image</span>
+            <span>Export PNG (Opaque)</span>
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={exportPngTransparent}>
+            <Image className="mr-2 h-4 w-4" />
+            <span>Export PNG (Transparent)</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={exportSvg}>
+            <Image className="mr-2 h-4 w-4" />
+            <span>Export SVG Image</span>
+          </DropdownMenuItem>
+          <DropdownMenuCheckboxItem
+            checked={includeWatermark}
+            onCheckedChange={onToggleWatermark}
+          >
+            <Database className="mr-2 h-4 w-4" />
+            <span>Include Watermark</span>
+          </DropdownMenuCheckboxItem>
           <DropdownMenuItem onClick={() => actions.loadSample()} disabled={readOnly}>
             <Sparkles className="mr-2 h-4 w-4" />
             <span>Load Sample schema</span>
