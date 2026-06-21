@@ -7,8 +7,9 @@ import {
   forwardRef,
 } from "react";
 import { toPng } from "html-to-image";
-import { Plus, Minus, Maximize2, MousePointer2 } from "lucide-react";
+import { Plus, Minus, Maximize2, MousePointer2, Grid, Locate } from "lucide-react";
 import { TableNode } from "./TableNode";
+import { toast } from "sonner";
 import {
   actions,
   useDiagram,
@@ -20,8 +21,8 @@ import { relationshipPath, diagramBounds, tableBounds } from "@/lib/erd/geometry
 import type { Point } from "@/lib/erd/geometry";
 import { downloadDataUrl } from "@/lib/erd/io";
 import { Button } from "@/components/ui/button";
-import type { RelationKind } from "@/lib/erd/types";
-import { TABLE_WIDTH, HEADER_HEIGHT, ROW_HEIGHT } from "@/lib/erd/types";
+import type { RelationKind, Diagram, Table } from "@/lib/erd/types";
+import { TABLE_WIDTH, HEADER_HEIGHT, ROW_HEIGHT, tableHeight } from "@/lib/erd/types";
 
 interface Viewport {
   x: number;
@@ -128,6 +129,7 @@ const KIND_LABELS: Record<RelationKind, string> = {
 export type CanvasHandle = {
   exportPng: (filename: string) => Promise<void>;
   fitView: () => void;
+  zoomToSelection: () => void;
 };
 
 export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
@@ -140,6 +142,14 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
   const [pending, setPending] = useState<Pending | null>(null);
   const [marquee, setMarquee] = useState<Marquee | null>(null);
   const [kindPicker, setKindPicker] = useState<KindPicker | null>(null);
+  const [snapToGrid, setSnapToGrid] = useState(false);
+  const [connHover, setConnHover] = useState<{
+    tableId: string;
+    columnId: string;
+    isValid: boolean;
+  } | null>(null);
+  const [hoveredTableId, setHoveredTableId] = useState<string | null>(null);
+  const [hoveredColumnId, setHoveredColumnId] = useState<string | null>(null);
 
   const dragState = useRef<{
     tableId: string;
@@ -174,20 +184,32 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
     [vp],
   );
 
-  // ---- wheel zoom ----
+  // ---- wheel zoom and pan ----
   const onWheel = useCallback((e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey) e.preventDefault();
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    setVp((prev) => {
-      const factor = Math.exp(-e.deltaY * 0.0015);
-      const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, prev.scale * factor));
-      const px = e.clientX - rect.left;
-      const py = e.clientY - rect.top;
-      const wx = (px - prev.x) / prev.scale;
-      const wy = (py - prev.y) / prev.scale;
-      return { scale: nextScale, x: px - wx * nextScale, y: py - wy * nextScale };
-    });
+
+    if (e.ctrlKey || e.metaKey) {
+      // Zoom
+      e.preventDefault();
+      setVp((prev) => {
+        const factor = Math.exp(-e.deltaY * 0.01);
+        const nextScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, prev.scale * factor));
+        const px = e.clientX - rect.left;
+        const py = e.clientY - rect.top;
+        const wx = (px - prev.x) / prev.scale;
+        const wy = (py - prev.y) / prev.scale;
+        return { scale: nextScale, x: px - wx * nextScale, y: py - wy * nextScale };
+      });
+    } else {
+      // Pan
+      e.preventDefault();
+      setVp((prev) => ({
+        ...prev,
+        x: prev.x - e.deltaX,
+        y: prev.y - e.deltaY,
+      }));
+    }
   }, []);
 
   // ---- background pointer down: pan or marquee ----
@@ -270,13 +292,21 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
         if (Math.abs(dx) > 1 || Math.abs(dy) > 1) d.moved = true;
         if (d.dragIds.length === 1) {
           const orig = d.origPos[d.tableId];
-          actions.moveTable(d.tableId, Math.round(orig.x + dx), Math.round(orig.y + dy));
+          const newX = orig.x + dx;
+          const newY = orig.y + dy;
+          const finalX = snapToGrid ? Math.round(newX / 24) * 24 : Math.round(newX);
+          const finalY = snapToGrid ? Math.round(newY / 24) * 24 : Math.round(newY);
+          actions.moveTable(d.tableId, finalX, finalY);
         } else {
           // bulk move: recompute each position from its original
           for (const id of d.dragIds) {
             const orig = d.origPos[id];
             if (orig) {
-              actions.moveTable(id, Math.round(orig.x + dx), Math.round(orig.y + dy));
+              const newX = orig.x + dx;
+              const newY = orig.y + dy;
+              const finalX = snapToGrid ? Math.round(newX / 24) * 24 : Math.round(newX);
+              const finalY = snapToGrid ? Math.round(newY / 24) * 24 : Math.round(newY);
+              actions.moveTable(id, finalX, finalY);
             }
           }
         }
@@ -314,6 +344,20 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
                 }
               : prev,
           );
+        }
+        const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+        const row = el?.closest("[data-col-id]") as HTMLElement | null;
+        if (row) {
+          const targetTableId = row.getAttribute("data-table-id");
+          const targetColumnId = row.getAttribute("data-col-id");
+          if (targetTableId && targetColumnId) {
+            const isValid = targetTableId !== pending.sourceTableId;
+            setConnHover({ tableId: targetTableId, columnId: targetColumnId, isValid });
+          } else {
+            setConnHover(null);
+          }
+        } else {
+          setConnHover(null);
         }
       }
     }
@@ -364,6 +408,7 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
           }
         }
         setPending(null);
+        setConnHover(null);
       }
 
       panState.current = null;
@@ -375,7 +420,50 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
     };
-  }, [vp.scale, vp.x, vp.y, pending, diagram.tables]);
+  }, [vp.scale, vp.x, vp.y, pending, diagram.tables, snapToGrid]);
+
+  // ---- arrow key nudging ----
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      const isEditing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      if (isEditing) return;
+
+      const keys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
+      if (!keys.includes(e.key)) return;
+
+      if (selectedIds.size === 0) return;
+
+      e.preventDefault();
+
+      let dx = 0;
+      let dy = 0;
+      // Default nudge: 4px. Shift-nudge: 24px (one grid block).
+      const amount = e.shiftKey ? 24 : 4;
+
+      if (e.key === "ArrowUp") dy = -amount;
+      else if (e.key === "ArrowDown") dy = amount;
+      else if (e.key === "ArrowLeft") dx = -amount;
+      else if (e.key === "ArrowRight") dx = amount;
+
+      for (const id of selectedIds) {
+        const tb = diagram.tables.find((t) => t.id === id);
+        if (tb) {
+          let nextX = tb.x + dx;
+          let nextY = tb.y + dy;
+          if (snapToGrid) {
+            nextX = Math.round(nextX / 24) * 24;
+            nextY = Math.round(nextY / 24) * 24;
+          }
+          actions.moveTable(id, nextX, nextY);
+        }
+      }
+      actions.commitMove();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedIds, diagram.tables, snapToGrid]);
 
   // ---- dismiss kind picker on outside click ----
   useEffect(() => {
@@ -405,6 +493,41 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
       y: rect.height / 2 - ((b.minY + b.maxY) / 2) * scale,
     });
   }, [diagram]);
+
+  const zoomToSelection = useCallback(() => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect || selectedIds.size === 0) return;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const id of selectedIds) {
+      const t = diagram.tables.find((table) => table.id === id);
+      if (t) {
+        const b = tableBounds(t);
+        minX = Math.min(minX, b.x);
+        minY = Math.min(minY, b.y);
+        maxX = Math.max(maxX, b.x + b.w);
+        maxY = Math.max(maxY, b.y + b.h);
+      }
+    }
+
+    if (minX === Infinity) return;
+
+    const w = maxX - minX + 160;
+    const h = maxY - minY + 160;
+    const scale = Math.min(
+      MAX_SCALE,
+      Math.max(MIN_SCALE, Math.min(rect.width / w, rect.height / h)),
+    );
+    setVp({
+      scale,
+      x: rect.width / 2 - ((minX + maxX) / 2) * scale,
+      y: rect.height / 2 - ((minY + maxY) / 2) * scale,
+    });
+  }, [diagram, selectedIds]);
 
   useEffect(() => {
     if (layoutRevision === 0) return;
@@ -440,7 +563,11 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
     [diagram.tables.length, fitView, vp],
   );
 
-  useImperativeHandle(ref, () => ({ exportPng, fitView }), [exportPng, fitView]);
+  useImperativeHandle(
+    ref,
+    () => ({ exportPng, fitView, zoomToSelection }),
+    [exportPng, fitView, zoomToSelection],
+  );
 
   const zoom = (dir: 1 | -1) => {
     setVp((prev) => {
@@ -512,17 +639,33 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
             const startMarker = markerUrlForKind(rel.kind, "start");
             const useStartMarker = rel.kind === "1-1" || rel.kind === "n-n";
 
+            const isSelected = selectedIds.has(rel.sourceTableId) || selectedIds.has(rel.targetTableId);
+            const isHovered = (hoveredTableId && (rel.sourceTableId === hoveredTableId || rel.targetTableId === hoveredTableId)) ||
+                              (hoveredColumnId && (rel.sourceColumnId === hoveredColumnId || rel.targetColumnId === hoveredColumnId));
+            const isHighlighted = isSelected || isHovered;
+
+            const hasAnyHighlightFocus = selectedIds.size > 0 || hoveredTableId !== null || hoveredColumnId !== null;
+
+            const strokeClass = isHighlighted
+              ? "stroke-primary transition-all duration-200"
+              : hasAnyHighlightFocus
+                ? "stroke-muted-foreground/20 opacity-30 transition-all duration-200"
+                : "stroke-muted-foreground/60 transition-all duration-200";
+
+            const strokeWidth = isHighlighted ? 2.5 : hasAnyHighlightFocus ? 1.0 : 1.5;
+            const colorStyle = isHighlighted ? "var(--primary)" : "hsl(var(--muted-foreground))";
+
             return (
               <g key={rel.id} className="pointer-events-auto">
                 {/* main line */}
                 <path
                   d={p.path}
                   fill="none"
-                  className="stroke-muted-foreground/60"
-                  strokeWidth={1.5}
+                  className={strokeClass}
+                  strokeWidth={strokeWidth}
                   markerEnd={endMarker}
                   markerStart={useStartMarker ? startMarker : undefined}
-                  style={{ color: "hsl(var(--muted-foreground))" }}
+                  style={{ color: colorStyle }}
                 />
                 {/* relationship kind label at midpoint */}
                 <text
@@ -531,6 +674,7 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
                   textAnchor="middle"
                   fontSize={10}
                   className="fill-muted-foreground select-none font-mono"
+                  style={{ opacity: hasAnyHighlightFocus && !isHighlighted ? 0.3 : 1 }}
                 >
                   {rel.kind}
                 </text>
@@ -540,8 +684,15 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
                   fill="none"
                   stroke="transparent"
                   strokeWidth={14}
-                  className="cursor-pointer"
-                  onClick={() => actions.removeRelationship(rel.id)}
+                  onClick={() => {
+                    actions.removeRelationship(rel.id);
+                    toast("Relationship deleted", {
+                      action: {
+                        label: "Undo",
+                        onClick: () => actions.undo(),
+                      },
+                    });
+                  }}
                 >
                   <title>Click to delete · {rel.kind}</title>
                 </path>
@@ -568,10 +719,13 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
             selected={t.id === selectedId}
             multiSelected={selectedIds.has(t.id)}
             connecting={!!pending}
+            connHover={connHover?.tableId === t.id ? connHover : null}
             onHeaderPointerDown={onHeaderPointerDown}
             onSelect={(id) => actions.selectTable(id)}
             onDelete={actions.removeTable}
             onHandlePointerDown={onHandlePointerDown}
+            onHoverTable={setHoveredTableId}
+            onHoverColumn={setHoveredColumnId}
           />
         ))}
       </div>
@@ -594,6 +748,7 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
       {kindPicker && (
         <KindPickerMenu
           picker={kindPicker}
+          container={containerRef.current}
           onPick={(kind) => {
             actions.addRelationship({
               sourceTableId: kindPicker.sourceTableId,
@@ -617,11 +772,50 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
         </div>
       )}
 
+      {/* minimap/overview panel */}
+      <Minimap
+        diagram={diagram}
+        vp={vp}
+        setVp={setVp}
+        containerRef={containerRef}
+      />
+
+      {/* floating add table button */}
+      <div
+        data-export-ignore
+        className="absolute bottom-16 right-4 z-30"
+      >
+        <Button
+          size="icon"
+          className="h-10 w-10 rounded-full shadow-lg cursor-pointer bg-primary hover:bg-primary/90 text-primary-foreground"
+          onClick={() => {
+            const rect = containerRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const cx = rect.width / 2;
+            const cy = rect.height / 2;
+            const w = toWorld(rect.left + cx, rect.top + cy);
+            actions.addTable({ x: Math.round(w.x), y: Math.round(w.y) });
+          }}
+          title="Add table"
+        >
+          <Plus className="h-5 w-5" />
+        </Button>
+      </div>
+
       {/* zoom controls */}
       <div
         data-export-ignore
         className="absolute bottom-4 right-4 flex items-center gap-1 rounded-lg border bg-card/90 p-1 shadow-lg backdrop-blur"
       >
+        <Button
+          variant={snapToGrid ? "default" : "ghost"}
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => setSnapToGrid(!snapToGrid)}
+          title="Snap to grid"
+        >
+          <Grid className="h-4 w-4" />
+        </Button>
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => zoom(-1)}>
           <Minus className="h-4 w-4" />
         </Button>
@@ -634,6 +828,16 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
         <Button variant="ghost" size="icon" className="h-8 w-8" onClick={fitView}>
           <Maximize2 className="h-4 w-4" />
         </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={zoomToSelection}
+          disabled={selectedIds.size === 0}
+          title="Zoom to selection"
+        >
+          <Locate className="h-4 w-4" />
+        </Button>
       </div>
     </div>
   );
@@ -643,16 +847,27 @@ export const Canvas = forwardRef<CanvasHandle>(function Canvas(_props, ref) {
 
 function KindPickerMenu({
   picker,
+  container,
   onPick,
   onDismiss,
 }: {
   picker: KindPicker;
+  container: HTMLDivElement | null;
   onPick: (kind: RelationKind) => void;
   onDismiss: () => void;
 }) {
-  const rect = document.getElementById("canvas-root")?.getBoundingClientRect();
-  const left = picker.screenX;
-  const top = picker.screenY;
+  if (!container) return null;
+  const rect = container.getBoundingClientRect();
+  let left = picker.screenX - rect.left;
+  let top = picker.screenY - rect.top;
+
+  // Approximate dimensions of the kind picker popup
+  const menuWidth = 160;
+  const menuHeight = 185;
+
+  // Clamp within the canvas bounds with an 8px gutter
+  left = Math.max(8, Math.min(left, rect.width - menuWidth - 8));
+  top = Math.max(8, Math.min(top, rect.height - menuHeight - 8));
 
   return (
     <div
@@ -680,6 +895,138 @@ function KindPickerMenu({
       >
         Cancel
       </button>
+    </div>
+  );
+}
+
+// ---- Minimap / Overview Panel ----
+
+interface MinimapProps {
+  diagram: Diagram;
+  vp: Viewport;
+  setVp: React.Dispatch<React.SetStateAction<Viewport>>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+}
+
+function Minimap({ diagram, vp, setVp, containerRef }: MinimapProps) {
+  const mapRef = useRef<SVGSVGElement>(null);
+  
+  if (diagram.tables.length === 0) return null;
+
+  const rect = containerRef.current?.getBoundingClientRect();
+  const containerW = rect?.width ?? 800;
+  const containerH = rect?.height ?? 600;
+
+  const MAP_W = 150;
+  const MAP_H = 112;
+
+  // Calculate diagram bounds
+  const bounds = diagramBounds(diagram);
+  const pad = 300; // world padding around tables
+  const minX = bounds.minX - pad;
+  const minY = bounds.minY - pad;
+  const maxX = bounds.maxX + pad;
+  const maxY = bounds.maxY + pad;
+  const boundsW = maxX - minX;
+  const boundsH = maxY - minY;
+
+  // Scaling factor
+  const mapScale = Math.min(MAP_W / boundsW, MAP_H / boundsH);
+  const offsetX = (MAP_W - boundsW * mapScale) / 2;
+  const offsetY = (MAP_H - boundsH * mapScale) / 2;
+
+  // Translate world to minimap coords
+  const toMapX = (wx: number) => (wx - minX) * mapScale + offsetX;
+  const toMapY = (wy: number) => (wy - minY) * mapScale + offsetY;
+
+  // Viewport representation on minimap
+  const vpWorldX1 = -vp.x / vp.scale;
+  const vpWorldY1 = -vp.y / vp.scale;
+  const vpWorldX2 = (containerW - vp.x) / vp.scale;
+  const vpWorldY2 = (containerH - vp.y) / vp.scale;
+
+  const vpMapX = toMapX(vpWorldX1);
+  const vpMapY = toMapY(vpWorldY1);
+  const vpMapW = (vpWorldX2 - vpWorldX1) * mapScale;
+  const vpMapH = (vpWorldY2 - vpWorldY1) * mapScale;
+
+  // Handle interaction (click or drag to center)
+  const handlePointerInteraction = (e: React.PointerEvent) => {
+    if (!mapRef.current || !rect) return;
+    const mapRect = mapRef.current.getBoundingClientRect();
+    const clickX = e.clientX - mapRect.left;
+    const clickY = e.clientY - mapRect.top;
+
+    // Convert minimap click to world coord
+    const worldX = (clickX - offsetX) / mapScale + minX;
+    const worldY = (clickY - offsetY) / mapScale + minY;
+
+    setVp((prev) => ({
+      ...prev,
+      x: containerW / 2 - worldX * prev.scale,
+      y: containerH / 2 - worldY * prev.scale,
+    }));
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    mapRef.current?.setPointerCapture(e.pointerId);
+    handlePointerInteraction(e);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (mapRef.current?.hasPointerCapture(e.pointerId)) {
+      handlePointerInteraction(e);
+    }
+  };
+
+  return (
+    <div
+      data-export-ignore
+      className="absolute bottom-4 left-4 rounded-lg border bg-card/90 p-1.5 shadow-lg backdrop-blur select-none z-30"
+    >
+      <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider px-1 pb-1">
+        Overview
+      </div>
+      <svg
+        ref={mapRef}
+        width={MAP_W}
+        height={MAP_H}
+        className="bg-canvas border rounded-md cursor-crosshair overflow-hidden"
+        style={{ touchAction: "none" }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+      >
+        {/* Render tables as tiny rects */}
+        {diagram.tables.map((t: Table) => {
+          const tx = toMapX(t.x);
+          const ty = toMapY(t.y);
+          const tw = TABLE_WIDTH * mapScale;
+          const th = tableHeight(t) * mapScale;
+          return (
+            <rect
+              key={t.id}
+              x={tx}
+              y={ty}
+              width={Math.max(1, tw)}
+              height={Math.max(1, th)}
+              rx={1}
+              fill={t.color || "hsl(var(--muted-foreground))"}
+              opacity={0.8}
+            />
+          );
+        })}
+
+        {/* Viewport rect overlay */}
+        <rect
+          x={vpMapX}
+          y={vpMapY}
+          width={Math.max(4, vpMapW)}
+          height={Math.max(4, vpMapH)}
+          fill="currentColor"
+          className="text-primary/10 stroke-primary"
+          strokeWidth={1.5}
+        />
+      </svg>
     </div>
   );
 }

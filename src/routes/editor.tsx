@@ -9,6 +9,7 @@ import {
   Sparkles,
   Eraser,
   Network,
+  PanelLeft,
   PanelRight,
   Code2,
   Undo2,
@@ -88,6 +89,8 @@ function EditorPage() {
   const [tab, setTab] = useState<SideTab>("properties");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
 
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -242,48 +245,70 @@ function EditorPage() {
     <div className="dark flex h-screen flex-col overflow-hidden bg-background text-foreground">
       {/* ---- top bar ---- */}
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-4">
-        <div className="flex items-center gap-3">
-          <Link to="/" className="flex items-center gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <Link to="/" className="flex items-center gap-2 shrink-0">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
               <Database className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="text-sm font-bold tracking-tight">OpenFlowDB</span>
+            <span className="hidden min-w-[450px]:inline text-sm font-bold tracking-tight">OpenFlowDB</span>
           </Link>
-          <div className="mx-1 h-5 w-px bg-border" />
+          <div className="mx-1 h-5 w-px bg-border shrink-0" />
           <Input
             value={diagram.name}
             onChange={(e) => !readOnly && actions.renameDiagram(e.target.value)}
             readOnly={readOnly}
-            className="h-8 w-56 border-transparent bg-transparent font-medium hover:border-input focus:border-input"
+            className="h-8 w-28 sm:w-48 md:w-56 border-transparent bg-transparent font-medium hover:border-input focus:border-input"
           />
           {/* Save status indicator */}
           {diagramId && isSupabaseConfigured() && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
               {saving ? (
-                <><Loader2 className="h-3 w-3 animate-spin" /> Saving…</>
+                <><Loader2 className="h-3 w-3 animate-spin" /> <span className="hidden sm:inline">Saving…</span></>
               ) : (
-                <><Save className="h-3 w-3 text-emerald-500" /> Saved</>
+                <><Save className="h-3 w-3 text-emerald-500" /> <span className="hidden sm:inline">Saved</span></>
               )}
             </span>
           )}
           {/* Read-only badge */}
           {readOnly && (
-            <span className="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
-              <EyeOff className="h-2.5 w-2.5" /> Read-only
+            <span className="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500 shrink-0">
+              <EyeOff className="h-2.5 w-2.5" /> <span className="hidden sm:inline">Read-only</span>
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 sm:gap-1.5 overflow-hidden">
           {/* Undo / Redo */}
-          <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" onClick={() => actions.undo()} disabled={!canUndo || readOnly} title="Undo (Ctrl+Z)">
+          <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer shrink-0" onClick={() => actions.undo()} disabled={!canUndo || readOnly} title="Undo (Ctrl+Z)">
             <Undo2 className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" onClick={() => actions.redo()} disabled={!canRedo || readOnly} title="Redo (Ctrl+Shift+Z)">
+          <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer shrink-0" onClick={() => actions.redo()} disabled={!canRedo || readOnly} title="Redo (Ctrl+Shift+Z)">
             <Redo2 className="h-4 w-4" />
           </Button>
 
-          <div className="mx-1 h-5 w-px bg-border" />
+          <div className="mx-1 h-5 w-px bg-border shrink-0" />
+
+          {/* Sidebar Toggles */}
+          <Button
+            variant={leftSidebarOpen ? "default" : "ghost"}
+            size="icon"
+            className="h-8 w-8 cursor-pointer shrink-0"
+            onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+            title="Toggle Tables Sidebar"
+          >
+            <PanelLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={rightSidebarOpen ? "default" : "ghost"}
+            size="icon"
+            className="h-8 w-8 cursor-pointer shrink-0"
+            onClick={() => setRightSidebarOpen(!rightSidebarOpen)}
+            title="Toggle Properties Sidebar"
+          >
+            <PanelRight className="h-4 w-4" />
+          </Button>
+
+          <div className="mx-1 h-5 w-px bg-border shrink-0" />
 
           <DiagramFileMenu
             canvasRef={canvasRef}
@@ -299,14 +324,15 @@ function EditorPage() {
           {/* Save / Login */}
           {!readOnly && isSupabaseConfigured() && (
             user ? (
-              <Button size="sm" variant="outline" onClick={handleManualSave} disabled={saving} className="gap-1.5 cursor-pointer">
+              <Button size="sm" variant="outline" onClick={handleManualSave} disabled={saving} className="gap-1.5 cursor-pointer px-2.5 sm:px-3 shrink-0">
                 {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                Save
+                <span className="hidden sm:inline">Save</span>
               </Button>
             ) : (
-              <Button size="sm" variant="outline" asChild className="gap-1.5 cursor-pointer">
+              <Button size="sm" variant="outline" asChild className="gap-1.5 cursor-pointer px-2.5 sm:px-3 shrink-0">
                 <Link to="/login">
-                  <LogIn className="h-3.5 w-3.5" /> Sign in to save
+                  <LogIn className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Sign in</span>
                 </Link>
               </Button>
             )
@@ -314,16 +340,16 @@ function EditorPage() {
 
           {/* Supabase not configured indicator */}
           {!isSupabaseConfigured() && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Configure VITE_SUPABASE_URL to enable cloud features">
-              <CloudOff className="h-3.5 w-3.5" /> Local only
+            <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0" title="Configure VITE_SUPABASE_URL to enable cloud features">
+              <CloudOff className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Local only</span>
             </span>
           )}
 
-          <div className="mx-1 h-5 w-px bg-border" />
+          <div className="mx-1 h-5 w-px bg-border shrink-0" />
 
           {/* Dashboard link */}
           {user && (
-            <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer" asChild title="My Diagrams">
+            <Button variant="ghost" size="icon" className="h-8 w-8 cursor-pointer shrink-0" asChild title="My Diagrams">
               <Link to="/dashboard">
                 <LayoutDashboard className="h-4 w-4" />
               </Link>
@@ -334,29 +360,30 @@ function EditorPage() {
             href={GITHUB_REPO_URL}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-8 items-center rounded-md px-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            className="hidden md:inline-flex h-8 items-center rounded-md px-2 text-sm text-muted-foreground transition hover:bg-muted hover:text-foreground shrink-0"
             title="View on GitHub"
           >
             <GitHubIcon className="h-4 w-4" />
           </a>
 
-          <div className="mx-1 h-5 w-px bg-border" />
+          <div className="hidden md:block mx-1 h-5 w-px bg-border shrink-0" />
 
-          <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground cursor-pointer" onClick={() => setPaletteOpen(true)} title="Command palette (Ctrl+K)">
+          <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground cursor-pointer shrink-0" onClick={() => setPaletteOpen(true)} title="Command palette (Ctrl+K)">
             <Terminal className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Commands</span>
-            <kbd className="hidden rounded border bg-muted px-1 text-[10px] font-mono sm:inline">⌘K</kbd>
+            <span className="hidden lg:inline">Commands</span>
+            <kbd className="hidden rounded border bg-muted px-1 text-[10px] font-mono lg:inline">⌘K</kbd>
           </Button>
 
-          <Button size="sm" onClick={() => setTab("sql")} title="Ctrl+G">
-            <Code2 className="mr-1 h-3.5 w-3.5" /> Generate SQL
+          <Button size="sm" onClick={() => setTab("sql")} title="Ctrl+G" className="px-2.5 sm:px-3 shrink-0">
+            <Code2 className="h-3.5 w-3.5 lg:mr-1" />
+            <span className="hidden lg:inline">Generate SQL</span>
           </Button>
         </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
         {/* ---- left: tables list ---- */}
-        <aside className="flex w-60 shrink-0 flex-col border-r border-border">
+        <aside className={cn("flex flex-col border-r border-border transition-all duration-300 ease-in-out shrink-0", leftSidebarOpen ? "w-60 opacity-100" : "w-0 opacity-0 overflow-hidden !border-r-0")}>
           <div className="flex items-center justify-between px-4 py-3">
             <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               Tables
@@ -449,7 +476,7 @@ function EditorPage() {
         </main>
 
         {/* ---- right: inspector / sql / history ---- */}
-        <aside className="flex w-80 shrink-0 flex-col border-l border-border">
+        <aside className={cn("flex flex-col border-l border-border transition-all duration-300 ease-in-out shrink-0", rightSidebarOpen ? "w-80 opacity-100" : "w-0 opacity-0 overflow-hidden !border-l-0")}>
           <div className="flex shrink-0 border-b border-border">
             <TabButton active={tab === "properties"} onClick={() => setTab("properties")}>
               <PanelRight className="mr-1.5 h-3.5 w-3.5" /> Properties
@@ -470,6 +497,22 @@ function EditorPage() {
           </div>
         </aside>
       </div>
+
+      {/* ---- status bar footer ---- */}
+      <footer className="flex h-8 shrink-0 items-center justify-between border-t border-border bg-card px-4 text-xs text-muted-foreground select-none z-10">
+        <div className="flex items-center gap-4">
+          <span>Tables: <strong>{diagram.tables.length}</strong></span>
+          <span>Columns: <strong>{diagram.tables.reduce((acc, t) => acc + t.columns.length, 0)}</strong></span>
+          <span>Relationships: <strong>{diagram.relationships.length}</strong></span>
+        </div>
+        <div className="flex items-center gap-4 font-medium text-foreground">
+          {selectedIds.size > 0 && (
+            <span>
+              {selectedIds.size} table{selectedIds.size !== 1 ? "s" : ""} selected
+            </span>
+          )}
+        </div>
+      </footer>
 
       <Toaster />
 

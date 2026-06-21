@@ -7,6 +7,9 @@ export interface Point {
 }
 
 function columnY(table: Table, columnId: string): number {
+  if (table.isCollapsed) {
+    return table.y + HEADER_HEIGHT / 2;
+  }
   const idx = table.columns.findIndex((c) => c.id === columnId);
   const i = idx < 0 ? 0 : idx;
   return table.y + HEADER_HEIGHT + i * ROW_HEIGHT + ROW_HEIGHT / 2;
