@@ -65,6 +65,24 @@ export function Inspector() {
           />
         </div>
         <div className="space-y-1.5">
+          <Label className="text-xs text-muted-foreground">Description</Label>
+          <textarea
+            value={table.description ?? ""}
+            onChange={(e) => actions.updateTable(table.id, { description: e.target.value })}
+            placeholder="Add description or notes..."
+            className="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+          />
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-xs">
+          <Label htmlFor="lock-position" className="text-muted-foreground">Lock position on canvas</Label>
+          <Switch
+            id="lock-position"
+            checked={table.isLocked ?? false}
+            onCheckedChange={(checked) => actions.updateTable(table.id, { isLocked: checked })}
+            className="scale-90"
+          />
+        </div>
+        <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">Color</Label>
           <div className="flex flex-wrap gap-1.5">
             {TABLE_COLORS.map((c) => (
@@ -79,6 +97,28 @@ export function Inspector() {
                 aria-label={`Set color ${c}`}
               />
             ))}
+            {/* Custom Color Picker Swatch */}
+            <label
+              className={cn(
+                "relative h-6 w-6 rounded-full border transition hover:scale-110 flex items-center justify-center cursor-pointer overflow-hidden",
+                !TABLE_COLORS.includes(table.color as any)
+                  ? "ring-2 ring-ring ring-offset-2 ring-offset-background"
+                  : "bg-muted hover:bg-muted/80"
+              )}
+              style={{
+                background: !TABLE_COLORS.includes(table.color as any) ? table.color : undefined,
+              }}
+              title="Custom Color"
+              aria-label="Set custom color"
+            >
+              <Plus className={cn("h-3.5 w-3.5", !TABLE_COLORS.includes(table.color as any) ? "text-white mix-blend-difference" : "text-muted-foreground")} />
+              <input
+                type="color"
+                value={TABLE_COLORS.includes(table.color as any) ? "#ffffff" : table.color}
+                onChange={(e) => actions.updateTable(table.id, { color: e.target.value })}
+                className="absolute inset-0 opacity-0 cursor-pointer h-full w-full"
+              />
+            </label>
           </div>
         </div>
 
@@ -154,6 +194,13 @@ export function Inspector() {
                     onChange={(e) =>
                       actions.updateColumn(table.id, col.id, { name: e.target.value })
                     }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && isLast) {
+                        e.preventDefault();
+                        const newId = actions.addColumn(table.id);
+                        setNewlyAddedColId(newId);
+                      }
+                    }}
                     className="h-8 text-sm"
                     placeholder="column_name"
                   />
@@ -232,6 +279,17 @@ export function Inspector() {
                   }
                   className="mt-2 h-7 font-mono text-xs"
                   placeholder="default value (optional)"
+                />
+
+                <Input
+                  value={col.comment ?? ""}
+                  onChange={(e) =>
+                    actions.updateColumn(table.id, col.id, {
+                      comment: e.target.value || undefined,
+                    })
+                  }
+                  className="mt-2 h-7 text-xs"
+                  placeholder="comment/description (optional)"
                 />
 
                 {/* per-column validation messages */}

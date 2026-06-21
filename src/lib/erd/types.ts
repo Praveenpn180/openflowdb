@@ -25,6 +25,7 @@ export interface Column {
   isNullable: boolean;
   isUnique: boolean;
   defaultValue?: string;
+  comment?: string;
 }
 
 export const TABLE_COLORS = [
@@ -45,6 +46,9 @@ export interface Table {
   y: number;
   color: string;
   columns: Column[];
+  isLocked?: boolean;
+  isCollapsed?: boolean;
+  description?: string;
 }
 
 export type RelationKind = "1-1" | "1-n" | "n-n";

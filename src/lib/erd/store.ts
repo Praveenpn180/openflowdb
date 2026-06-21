@@ -261,7 +261,7 @@ export const actions = {
     updateDiagram(
       (d) => ({
         ...d,
-        tables: d.tables.map((t) => (t.id === id ? { ...t, x, y } : t)),
+        tables: d.tables.map((t) => (t.id === id && !t.isLocked ? { ...t, x, y } : t)),
       }),
       false, // don't push to history on every pixel
     );
@@ -282,7 +282,7 @@ export const actions = {
       (d) => ({
         ...d,
         tables: d.tables.map((t) =>
-          ids.includes(t.id) ? { ...t, x: Math.round(t.x + dx), y: Math.round(t.y + dy) } : t,
+          ids.includes(t.id) && !t.isLocked ? { ...t, x: Math.round(t.x + dx), y: Math.round(t.y + dy) } : t,
         ),
       }),
       false,
